@@ -29,14 +29,16 @@ evenflow check . --format json
 evenflow rules
 ```
 
-The release-build workflow produces prebuilt executables for Linux x86_64
+Download prebuilt executables from
+[GitHub Releases](https://github.com/cmeister2/evenflow/releases) for Linux x86_64
 (`x86_64-unknown-linux-gnu`), macOS Apple Silicon (`aarch64-apple-darwin`), and
-Windows x86_64 (`x86_64-pc-windows-msvc`), plus a Cargo source archive. Retrieve
-these from a completed **Release artifacts** workflow run; the workflow does not
-publish to crates.io or create a GitHub release. Extract the matching executable
-and place it on `PATH`. A prebuilt executable needs the matching operating
-system/runtime, but no Rust compiler, Cargo, separately installed parser, or
-grammar. Linux archives are built on Ubuntu 22.04 and use its system C runtime.
+Windows x86_64 (`x86_64-pc-windows-msvc`). Unix archives are named
+`evenflow-VERSION-TARGET.tar.gz`; Windows uses `evenflow-VERSION-TARGET.zip`.
+Each release also includes `evenflow-VERSION.crate` and `SHA256SUMS`. Extract the
+matching executable and place it on `PATH`. A prebuilt executable needs the
+matching operating system/runtime, but no Rust compiler, Cargo, Node.js,
+separately installed parser, or grammar. Linux archives are built on Ubuntu 22.04
+and use its system C runtime. Releases are not published to npm or crates.io.
 
 A scan is offline: it reads source and local configuration, and does not contact
 a service or build the checked project. Source installation may download Cargo
@@ -281,6 +283,49 @@ runs with an empty `PATH` and environment, and checks clean, lint-failing, and
 syntax-failing JSON scans. The release workflow additionally installs from the
 packaged source with `cargo install --locked`, then checks that executable.
 Nothing invokes Evenflow recursively from a build script or during analysis.
+
+## Releases
+
+CI runs semantic-release on pushes to `main`. Publication waits for all checks:
+stable and minimum-supported Rust verification, tests and standalone smoke
+checks on all three native platforms, and installation from the packaged Cargo
+source. CI calculates the release version, stamps it into `Cargo.toml` and
+`Cargo.lock` before building, and checks each executable's `--version` output.
+The versioned archives, source package, checksums, and generated release notes are
+then published together on GitHub Releases.
+
+Use Conventional Commits for changes merged to `main`:
+
+| Commit | Release |
+| --- | --- |
+| `fix: ...` | Patch |
+| `feat: ...` | Minor |
+| `feat!: ...` or a `BREAKING CHANGE:` footer | Major |
+| `docs: ...`, `chore: ...`, `ci: ...` | No release |
+
+The checked-in Cargo version remains the development version, currently
+`0.1.0`; release builds receive the calculated version without a version-bump
+commit. With no existing release tags, semantic-release's first release will be
+`1.0.0`. The release-automation setup commit does not itself request a release;
+the next qualifying change starts publication.
+
+Node.js **24.10.0 or newer** and npm are needed only when working on release
+automation. Install its locked dependencies and run its checks with:
+
+```sh
+npm ci --ignore-scripts
+npm run test:release
+```
+
+Preview the next version and release notes with:
+
+```sh
+npm run release -- --dry-run
+```
+
+The preview requires GitHub credentials and repository push rights because
+semantic-release verifies authorization even in dry-run mode. It skips release
+preparation, packaging, and publication.
 
 ## License
 

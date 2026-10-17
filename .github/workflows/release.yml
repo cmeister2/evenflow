@@ -1,11 +1,18 @@
 name: Release artifacts
 
-# Build reviewable workflow artifacts; publication is a separate explicit action.
+# Reused by CI after stable and minimum-version checks pass.
 on:
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
 
 permissions:
   contents: read
+
+env:
+  RELEASE_VERSION: ${{ inputs.version }}
 
 jobs:
   binaries:
@@ -17,7 +24,7 @@ jobs:
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             binary: evenflow
-          - os: macos-14
+          - os: macos-15
             target: aarch64-apple-darwin
             binary: evenflow
           - os: windows-2022
@@ -26,12 +33,22 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-plan
+          path: release-prepared/
+      - name: Apply prepared Cargo version
+        shell: bash
+        run: cp release-prepared/Cargo.toml release-prepared/Cargo.lock .
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
           components: rustfmt
       - run: cargo test --locked --target ${{ matrix.target }}
       - run: cargo build --locked --release --target ${{ matrix.target }}
+      - name: Verify executable version
+        shell: bash
+        run: test "$(target/${{ matrix.target }}/release/${{ matrix.binary }} --version)" = "evenflow $RELEASE_VERSION"
       - name: Check production source with the release executable
         shell: bash
         run: target/${{ matrix.target }}/release/${{ matrix.binary }} check . --strict
@@ -81,17 +98,18 @@ jobs:
       - name: Stage executable and documentation
         shell: bash
         run: |
-          mkdir -p dist/evenflow-${{ matrix.target }}
-          cp target/${{ matrix.target }}/release/${{ matrix.binary }} dist/evenflow-${{ matrix.target }}/
-          cp README.md LICENSE-MIT LICENSE-APACHE dist/evenflow-${{ matrix.target }}/
+          archive_root="evenflow-$RELEASE_VERSION-${{ matrix.target }}"
+          mkdir -p "dist/$archive_root"
+          cp target/${{ matrix.target }}/release/${{ matrix.binary }} "dist/$archive_root/"
+          cp README.md LICENSE-MIT LICENSE-APACHE "dist/$archive_root/"
       - name: Archive Unix executable
         if: runner.os != 'Windows'
         shell: bash
-        run: tar -czf dist/evenflow-${{ matrix.target }}.tar.gz -C dist evenflow-${{ matrix.target }}
+        run: tar -czf "dist/evenflow-$RELEASE_VERSION-${{ matrix.target }}.tar.gz" -C dist "evenflow-$RELEASE_VERSION-${{ matrix.target }}"
       - name: Archive Windows executable
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Compress-Archive -Path dist/evenflow-${{ matrix.target }} -DestinationPath dist/evenflow-${{ matrix.target }}.zip
+        run: Compress-Archive -Path "dist/evenflow-$env:RELEASE_VERSION-${{ matrix.target }}" -DestinationPath "dist/evenflow-$env:RELEASE_VERSION-${{ matrix.target }}.zip"
       - uses: actions/upload-artifact@v4
         with:
           name: evenflow-${{ matrix.target }}
@@ -105,13 +123,20 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-plan
+          path: release-prepared/
+      - name: Apply prepared Cargo version
+        run: cp release-prepared/Cargo.toml release-prepared/Cargo.lock .
       - uses: dtolnay/rust-toolchain@1.90.0
-      - run: cargo package --locked
+      - run: cargo package --locked --allow-dirty
       - name: Install from the packaged crate
         shell: bash
         run: |
-          package_version=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')
-          cargo install --locked --path "target/package/evenflow-$package_version" --root "$RUNNER_TEMP/evenflow-installed"
+          test -f "target/package/evenflow-$RELEASE_VERSION.crate"
+          cargo install --locked --path "target/package/evenflow-$RELEASE_VERSION" --root "$RUNNER_TEMP/evenflow-installed"
+          test "$("$RUNNER_TEMP/evenflow-installed/bin/evenflow" --version)" = "evenflow $RELEASE_VERSION"
           bash scripts/release-smoke.sh "$RUNNER_TEMP/evenflow-installed/bin/evenflow"
       - uses: actions/upload-artifact@v4
         with:

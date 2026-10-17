@@ -1,5 +1,7 @@
 /target/
 /dist/
+/node_modules/
+/release-prepared/
 /.cache/
 /.agents/
 /.codex/

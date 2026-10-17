@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 jobs:
   checks:
     name: Stable checks and strict self-check
@@ -21,6 +25,12 @@ jobs:
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
       - run: cargo run --locked -- check . --strict
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run test:release
 
   msrv:
     name: Minimum Rust 1.90.0
@@ -32,3 +42,72 @@ jobs:
           components: rustfmt
       - run: cargo test --locked
       - run: cargo run --locked -- check . --strict
+
+  release-plan:
+    name: Plan release version
+    needs: [checks, msrv]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-22.04
+    # semantic-release verifies push permission even during its dry run.
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      releasing: ${{ steps.plan.outputs.releasing }}
+      commit: ${{ steps.plan.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Plan and prepare versioned Cargo manifests
+        id: plan
+        run: npm run release:plan
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-plan
+          path: release-prepared/
+          if-no-files-found: error
+
+  artifacts:
+    name: Verify release artifacts
+    needs: release-plan
+    uses: ./.github/workflows/release.yml
+    with:
+      version: ${{ needs.release-plan.outputs.version }}
+
+  release:
+    name: Publish GitHub release
+    needs: [checks, msrv, release-plan, artifacts]
+    if: needs.release-plan.outputs.releasing == 'true'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-plan
+          path: release-prepared/
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: evenflow-*
+          path: dist/
+          merge-multiple: true
+      - name: Publish the verified version and assets
+        run: npm run release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
