@@ -1,0 +1,6 @@
+# Keep production Rust implementation and bundled rules in the self-check.
+# Expected-failure fixtures live in tests/, excluded by the default test policy.
+include-tests = false
+
+[rules]
+FC001 = "warning"

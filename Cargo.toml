@@ -1,0 +1,35 @@
+[package]
+name = "evenflow"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90.0"
+description = "Opinionated structural Rust linting alongside Clippy"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+include = ["src/**", "tests/**", "scripts/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE-*", "evenflow.toml"]
+
+[dependencies]
+clap = { version = "4.6", features = ["derive"] }
+globset = "0.4.18"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8.23"
+tree-sitter = "=0.27.1"
+tree-sitter-rust = "=0.24.2"
+walkdir = "2.5"
+
+[dev-dependencies]
+tempfile = "3.27"
+
+[lints.rust]
+missing_docs = "deny"
+unsafe_code = "forbid"
+
+[lints.clippy]
+missing_docs_in_private_items = "deny"
+missing_errors_doc = "deny"
+missing_panics_doc = "deny"
+
+[profile.release]
+lto = "thin"
+strip = true
