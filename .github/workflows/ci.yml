@@ -16,9 +16,9 @@ concurrency:
 jobs:
   checks:
     name: Stable checks and strict self-check
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: clippy, rustfmt
@@ -26,7 +26,7 @@ jobs:
       - run: cargo clippy --locked --all-targets -- -D warnings
       - run: cargo test --locked
       - run: cargo run --locked -- check . --strict
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: '24'
           cache: npm
@@ -35,9 +35,9 @@ jobs:
 
   msrv:
     name: Minimum Rust 1.90.0
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dtolnay/rust-toolchain@1.90.0
         with:
           components: rustfmt
@@ -52,8 +52,8 @@ jobs:
         os: [ubuntu-22.04, macos-15, windows-2022]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: '24'
       - run: npm run test:action
@@ -94,7 +94,7 @@ jobs:
     name: Plan publication
     needs: [checks, msrv, action]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-26.04
     # semantic-release verifies push permission even during its dry run.
     permissions:
       contents: write
@@ -103,10 +103,10 @@ jobs:
       releasing: ${{ steps.plan.outputs.releasing }}
       commit: ${{ steps.plan.outputs.commit }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: '24'
           cache: npm
@@ -116,7 +116,7 @@ jobs:
         run: npm run release:plan
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: release-plan
           path: release-prepared/
@@ -130,14 +130,14 @@ jobs:
       needs.checks.result == 'success' && needs.msrv.result == 'success' &&
       needs.action.result == 'success' &&
       (needs.release-plan.result == 'success' || needs.release-plan.result == 'skipped')
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-26.04
     outputs:
       version: ${{ needs.release-plan.outputs.version || steps.ci-plan.outputs.version }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: '24'
           cache: npm
@@ -148,11 +148,11 @@ jobs:
         run: npm run release:plan -- --preview
       - name: Download publication-version manifests
         if: needs.release-plan.result == 'success'
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: release-plan
           path: release-prepared/
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: build-plan
           path: release-prepared/
@@ -179,8 +179,8 @@ jobs:
             binary: evenflow.exe
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: build-plan
           path: release-prepared/
@@ -257,7 +257,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: Compress-Archive -Path "dist/evenflow-$env:RELEASE_VERSION-${{ matrix.target }}" -DestinationPath "dist/evenflow-$env:RELEASE_VERSION-${{ matrix.target }}.zip"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: evenflow-${{ matrix.target }}
           path: |
@@ -271,10 +271,10 @@ jobs:
     env:
       RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
     name: Cargo source package and source installation
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: build-plan
           path: release-prepared/
@@ -291,7 +291,7 @@ jobs:
           cargo install --locked --path "target/package/evenflow-$RELEASE_VERSION" --root "$RUNNER_TEMP/evenflow-installed"
           test "$("$RUNNER_TEMP/evenflow-installed/bin/evenflow" --version)" = "evenflow $RELEASE_VERSION"
           bash scripts/release-smoke.sh "$RUNNER_TEMP/evenflow-installed/bin/evenflow"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: evenflow-source
           path: target/package/*.crate
@@ -301,7 +301,7 @@ jobs:
     name: Success
     if: always()
     needs: [checks, msrv, action, release-plan, prepare, binaries, source]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Require all applicable checks to pass
         env:
@@ -330,24 +330,24 @@ jobs:
     name: Publish crates.io and GitHub release
     needs: [success, release-plan]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.release-plan.outputs.releasing == 'true'
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@1.90.0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: '24'
           cache: npm
       - run: npm ci --ignore-scripts
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: release-plan
           path: release-prepared/
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: evenflow-*
           path: dist/
