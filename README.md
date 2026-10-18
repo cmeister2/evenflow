@@ -17,6 +17,65 @@ evenflow rules
 Prebuilt binaries are available from
 [GitHub Releases](https://github.com/cmeister2/evenflow/releases).
 
+## GitHub Action
+
+Call Evenflow from another repository's workflow after checking out that
+repository:
+
+```yaml
+name: Evenflow
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: cmeister2/evenflow@main
+```
+
+The action downloads a prebuilt binary, verifies it against the release's
+`SHA256SUMS`, and runs `evenflow check` with text diagnostics. No Rust toolchain
+or project build is required. Supported runners are Linux x64, macOS ARM64, and
+Windows x64; other operating system and architecture combinations fail with an
+error.
+
+| Input | Default | Meaning |
+| --- | --- | --- |
+| `version` | `latest` | Latest stable release, or an exact bare version such as `0.1.1` without a `v` prefix. |
+| `paths` | `.` | Files or directories, one per line, relative to `working-directory`. |
+| `working-directory` | `.` | Directory to scan from, relative to `GITHUB_WORKSPACE`. |
+| `strict` | `true` | Promote enabled warnings to errors. Set `false` to respect configured rule severities. |
+| `token` | `${{ github.token }}` | Token used only for GitHub API reads of releases and assets. |
+
+For example, select a release, scan part of a repository, and allow configured
+warnings:
+
+```yaml
+- uses: cmeister2/evenflow@main
+  with:
+    version: '0.1.1'
+    working-directory: crates/service
+    paths: |
+      src/
+      examples/request.rs
+    strict: 'false'
+```
+
+Configuration discovery starts from `working-directory` using the same
+`evenflow.toml` rules as the CLI. The action preserves CLI exit statuses: `0`
+passes, `1` fails for error-level lint findings, and `2` fails for tool or analysis
+errors. Its default strict mode also fails on warnings.
+
+The examples use `@main` because the action has not yet been tagged. For
+reproducible CI, replace `main` with a full commit SHA containing the action and
+set `version` to an exact release. Pinning the action alone still uses the latest
+binary unless `version` is set.
+
 ## Documentation
 
 - [Bundled rules](docs/RULES.md): FC001 flow comments, with examples and exemptions.

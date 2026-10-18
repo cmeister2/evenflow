@@ -1,0 +1,32 @@
+name: Evenflow
+description: Check Rust source structure and flow comments without building your project.
+author: cmeister2
+branding:
+  icon: check-circle
+  color: blue
+
+inputs:
+  version:
+    description: Evenflow release version (bare major.minor.patch), or latest.
+    required: false
+    default: latest
+  paths:
+    description: Newline-separated Rust files or directories, relative to working-directory.
+    required: false
+    default: '.'
+  working-directory:
+    description: Directory to check, relative to the checked-out workspace.
+    required: false
+    default: '.'
+  strict:
+    description: Promote enabled lint warnings to errors.
+    required: false
+    default: 'true'
+  token:
+    description: GitHub token for reading Evenflow releases and assets.
+    required: false
+    default: ${{ github.token }}
+
+runs:
+  using: node24
+  main: .github/action/main.mjs
