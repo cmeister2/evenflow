@@ -2,7 +2,7 @@
 
 use crate::model::Level;
 use crate::registry::{Finding, Rule, RuleDefinition};
-use crate::source::{Body, BodyKind, Comment, SourceContext, is_logging_macro};
+use crate::source::{Body, Comment, SourceContext};
 
 /// The first bundled rule, implemented through the shared rule interface.
 pub struct FlowCommentRule;
@@ -26,7 +26,7 @@ impl Rule for FlowCommentRule {
         let mut findings = Vec::new();
         // Qualifying nested bodies each receive their own exact suppression target.
         for body in &context.bodies {
-            if !qualifies(context, body) || has_flow_comment(context, body) {
+            if !context.is_substantial_body(body) || has_flow_comment(context, body) {
                 continue;
             }
             findings.push(Finding {
@@ -42,20 +42,6 @@ impl Rule for FlowCommentRule {
         }
         Ok(findings)
     }
-}
-
-/// Select FC001 bodies independently of the parser's complete structural model.
-fn qualifies(context: &SourceContext, body: &Body) -> bool {
-    body.in_scope
-        && body.kind != BodyKind::Function
-        && body.statements.len() >= 3
-        && !body.statements.iter().all(|statement| {
-            statement
-                .macro_path
-                .as_deref()
-                .is_some_and(is_logging_macro)
-                || context.is_plain_field_copy(statement)
-        })
 }
 
 /// Accept an ordinary explanation in the block's first comment group.

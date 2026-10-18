@@ -124,7 +124,7 @@ pub struct Body {
     pub statements: Vec<Statement>,
     /// Attributes attached to the owning construct.
     pub attributes: Vec<Attribute>,
-    /// Lexical context, including contexts omitted by FC001.
+    /// Lexical context, including contexts omitted by bundled body rules.
     pub context: BodyContext,
     /// Whether production/test and const scope policies include this body.
     pub in_scope: bool,
@@ -164,6 +164,38 @@ pub struct SourceContext {
 }
 
 impl SourceContext {
+    /// Select substantial nested bodies for the bundled flow and entry rules.
+    ///
+    /// Function bodies, out-of-scope contexts, short bodies, and bodies made
+    /// entirely of recognized logging or plain field copies are exempt.
+    pub fn is_substantial_body(&self, body: &Body) -> bool {
+        body.in_scope
+            && body.kind != BodyKind::Function
+            && body.statements.len() >= 3
+            && !body.statements.iter().all(|statement| {
+                statement
+                    .macro_path
+                    .as_deref()
+                    .is_some_and(is_logging_macro)
+                    || self.is_plain_field_copy(statement)
+            })
+    }
+
+    /// Return the first direct syntax item after skipping only comments.
+    ///
+    /// Attributes, empty statements, and local declarations are retained, unlike
+    /// the executable-only statement sequence used for body size.
+    pub fn first_non_comment_item(&self, body: &Body) -> Option<Node<'_>> {
+        let block = self
+            .tree
+            .root_node()
+            .named_descendant_for_byte_range(body.span.start, body.span.end)?;
+        let mut cursor = block.walk();
+        block
+            .named_children(&mut cursor)
+            .find(|child| !is_comment(*child))
+    }
+
     /// Parse and index one complete Rust source file without filesystem access.
     ///
     /// # Errors

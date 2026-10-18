@@ -21,9 +21,11 @@ locations use byte offsets. Unlocated errors sort first, followed by path,
 position, and ID. The framework uses **EF000** for configuration, input, encoding,
 parsing, suppression, and internal-rule errors.
 
-The bundled flow-comment rule uses **FC001**. **EF100** identifies advisory macro
-coverage notes. See [rules](RULES.md) and [scope and coverage](SCOPE.md) for their
-meaning and limits.
+The flow-comment rule uses **FC001**. The optional entry-logging rule uses
+**LG001** and defaults to `off`. A missing, disallowed, or unresolved first entry
+is an LG001 lint finding, not an analysis error. **EF100** identifies advisory
+macro coverage notes. See [rules](RULES.md) and [scope and coverage](SCOPE.md) for
+their meaning and limits.
 
 ## JSON output
 
