@@ -15,10 +15,10 @@ warnings to errors; it does not enable a disabled rule.
 ### Qualifying bodies
 
 A non-function executable body with **three or more direct executable
-statements** needs a leading ordinary comment. A trailing expression counts once;
-a multiline call or nested control construct also counts once at its parent
-level. Comments, attributes, and local item definitions do not count. Function
-and method outer bodies are exempt, while their nested bodies are checked.
+statements** must start with an ordinary flow comment. A trailing expression
+counts once; a multiline call or nested control construct also counts once at
+its parent level. Comments, attributes, and local item definitions do not count.
+Function and method outer bodies are exempt, while their nested bodies are checked.
 
 For example, this branch has three direct statements and produces FC001:
 
@@ -35,29 +35,40 @@ fn save_if_dirty(state: &mut State) -> Result<()> {
 
 ### Comment placement
 
-Explain the reason for the sequence before its owning construct:
+Put the flow comment first inside the block. Other explanatory comments are
+allowed anywhere: a comment above an `if` can explain the decision or both arms,
+while each substantial arm still needs its own opening flow comment.
 
 ```rust
-fn save_if_dirty(state: &mut State) -> Result<()> {
-    // Preserve the dirty marker until persistence succeeds so failures can retry.
-    if state.is_dirty() {
-        let snapshot = state.snapshot();
-        persist(snapshot)?;
-        state.mark_clean();
+fn update(ready: bool) {
+    // Commit only when ready; otherwise discard the staged changes.
+    if ready {
+        // Preserve the write order until the transaction is committed.
+        prepare();
+        write();
+        commit();
+    } else {
+        // Clear the staged work before reporting the failed attempt.
+        rollback();
+        reset();
+        report_failure();
     }
-    Ok(())
 }
 ```
 
-A standalone ordinary `//` or `/* ... */` explanation can instead precede the
-body's first executable statement. Whitespace and attributes may intervene.
-Adjacent comment lines form one explanation. There is no required prefix or
-prose-quality scoring; reviewers assess whether the explanation is useful.
+To satisfy FC001, a standalone ordinary `//` or `/* ... */` explanation must be
+the first thing after the opening brace, apart from whitespace. Comments elsewhere
+remain valid; they simply do not satisfy this requirement. Adjacent comment lines
+form one explanation; only the opening comment group counts, so a later
+explanation cannot repair an initial license header or
+placeholder group. There is no required prefix or prose-quality scoring;
+reviewers assess whether the explanation is useful.
 Documentation comments, trailing comments, license headers, suppression
 directives, and comments consisting only of TODO/FIXME placeholders do not count.
-An explanation belongs to one body; children and sibling branches need their own
-explanations when they qualify. Before `if` or `while`, it explains the primary
-body, not an executable block inside the condition.
+An explanation belongs to one body; children, sibling branches, and blocks inside
+conditions need their own opening explanations when they qualify. Reasoned
+[suppressions](../README.md#local-suppressions) retain their separate placement
+rules.
 
 ### Exemptions
 

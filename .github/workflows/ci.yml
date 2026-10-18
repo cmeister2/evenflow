@@ -167,8 +167,8 @@ jobs:
           Copy-Item 'target/${{ matrix.target }}/release/evenflow.exe' $smokeBinary
           $cleanSource = @'
           fn clean() {
-              // Keep the ordered transaction together after readiness.
               if ready() {
+                  // Keep the ordered transaction together after readiness.
                   prepare();
                   write();
                   commit();

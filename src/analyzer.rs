@@ -73,9 +73,9 @@ pub fn analyze_source(
     let directives = collect_directives(&context, registry, &mut diagnostics);
     let mut used = BTreeSet::new();
 
-    // Run each enabled rule through one contract. Severity and suppression are
-    // applied afterward so rule code remains independent of rollout policy.
     for rule in registry.rules() {
+        // Run each enabled rule through one contract. Severity and suppression are
+        // applied afterward so rule code remains independent of rollout policy.
         let definition = rule.definition();
         let level = settings
             .levels
@@ -189,9 +189,9 @@ fn collect_directives(
     diagnostics: &mut Vec<Diagnostic>,
 ) -> Vec<Directive> {
     let mut directives = Vec::new();
-    // Only recognized comment tokens in analyzed source can activate parsing;
-    // prose mentions, doc comments, and opaque macro arguments stay ordinary.
     for comment in &context.comments {
+        // Only recognized comment tokens in analyzed source can activate parsing;
+        // prose mentions, doc comments, and opaque macro arguments stay ordinary.
         if comment.is_doc || !comment.in_scope {
             continue;
         }

@@ -7,7 +7,7 @@ warning frequency in third-party projects.
 
 | File | Lines | Expected FC001 | Expected EF100 | Evaluation |
 | --- | ---: | ---: | ---: | --- |
-| `workflow.rs` | 62 | 0 | 0 | Existing explanations and the narrow logging/field-copy exemptions avoid unnecessary headings. Short bodies, expression-only arms, and compile-time contexts remain clean. |
+| `workflow.rs` | 62 | 0 | 0 | Explanations at the start of each qualifying body and the narrow logging/field-copy exemptions avoid unnecessary findings. Short bodies, expression-only arms, and compile-time contexts remain clean. |
 | `queue.rs` | 38 | 3 | 0 | Queue processing, the successful recovery arm, and the inner retry each lack their own explanation. The explained error arm and outer branch remain clean. |
 | `macros.rs` | 23 | 0 | 2 | A custom macro and `tokio::select!` expose coverage gaps. Logging/data macros are opaque exceptions; braces inside a string do not create a gap. |
 

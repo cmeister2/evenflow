@@ -10,7 +10,7 @@ apply to findings for a specific body.
 Text findings and coverage notes go to stdout; operational errors go to stderr:
 
 ```text
-src/worker.rs:42:9: warning FC001: branch body has 4 direct statements; add a leading flow comment
+src/worker.rs:42:9: warning FC001: branch body has 4 direct statements; add a flow comment at the start of the block
 ```
 
 ## Locations and identifiers

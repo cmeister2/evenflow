@@ -126,7 +126,7 @@ fn format_source(path: &Path) {
 #[test]
 fn rustfmt_layout_changes_preserve_rule_conclusions() {
     let project = TempDir::new().expect("create formatting fixture");
-    let compact = "fn work(){if ready(){let first=load();validate(&first);save(first);}\n// This explanation belongs to the following loop.\nfor item in items(){let decoded=decode(item);validate(&decoded);save(decoded);}}\n";
+    let compact = "fn work(){if ready(){let first=load();validate(&first);save(first);}\nfor item in items(){\n// Validate each decoded value before saving it.\nlet decoded=decode(item);validate(&decoded);save(decoded);}}\n";
     let path = project.path().join("layout.rs");
     fs::write(&path, compact).expect("write unformatted fixture");
     let before = analyze_corpus(&[("layout.rs", compact)]);
@@ -152,7 +152,7 @@ fn thousands_of_comments_preserve_body_ownership_and_complete() {
     let mut source = String::from("fn many_boundaries() {\n");
     for index in 0..2_000 {
         source.push_str(&format!(
-            "// Keep operation {index} ordered before its commit marker.\nif ready() {{ let value = load(); save(value); commit(); }}\n"
+            "if ready() {{\n// Keep operation {index} ordered before its commit marker.\nlet value = load(); save(value); commit(); }}\n"
         ));
     }
     source.push_str("if final_ready() { finish(); commit(); publish(); }\n}\n");
@@ -160,6 +160,6 @@ fn thousands_of_comments_preserve_body_ownership_and_complete() {
     assert!(report.summary.analysis_completed);
     assert_eq!(report.diagnostics.len(), 1, "{:?}", report.diagnostics);
     assert_eq!(report.diagnostics[0].rule, "FC001");
-    assert_eq!(report.diagnostics[0].range.unwrap().start.line, 4_002);
+    assert_eq!(report.diagnostics[0].range.unwrap().start.line, 6_002);
     assert_eq!(report.summary.analyzed_files, 1);
 }

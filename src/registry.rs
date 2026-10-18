@@ -114,9 +114,9 @@ impl Registry {
     /// Returns an error for invalid or duplicate IDs and duplicate option names.
     pub fn new(rules: Vec<Box<dyn Rule>>) -> Result<Self, String> {
         let mut registered = BTreeMap::new();
-        // Validate the complete catalog before dispatch so conflicting rule
-        // identities cannot produce configuration-dependent results.
         for rule in rules {
+            // Validate the complete catalog before dispatch so conflicting rule
+            // identities cannot produce configuration-dependent results.
             let definition = rule.definition();
             if !valid_id(definition.id) || definition.id.starts_with("EF") {
                 return Err("rule registry contains an invalid or reserved ID".into());
@@ -164,9 +164,9 @@ impl Registry {
                 return Err(format!("unknown rule ID {id}"));
             }
         }
-        // Validate rule-local schemas centrally, keeping configuration parsing
-        // unchanged when a bundled rule adds an option.
         for (id, table) in options {
+            // Validate rule-local schemas centrally, keeping configuration parsing
+            // unchanged when a bundled rule adds an option.
             let Some(rule) = self.get(id) else {
                 continue;
             };

@@ -56,9 +56,9 @@ pub(crate) fn load(working_directory: &Path) -> Result<LoadedConfig, Box<Diagnos
             None,
         ))
     })?;
-    // Select one nearest configuration so a child project's policy never
-    // silently inherits a different ancestor's rule settings.
     for ancestor in working_directory.ancestors() {
+        // Select one nearest configuration so a child project's policy never
+        // silently inherits a different ancestor's rule settings.
         let candidate = ancestor.join(CONFIG_FILENAME);
         let metadata = match fs::metadata(&candidate) {
             Ok(metadata) => metadata,

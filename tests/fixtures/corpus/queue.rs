@@ -25,8 +25,8 @@ fn recover() {
 }
 
 fn nested_ownership() {
-    // Preparation and finalization surround both the initial attempt and its retry.
     if ready() {
+        // Preparation and finalization surround both the initial attempt and its retry.
         prepare();
         if should_retry() {
             fetch();

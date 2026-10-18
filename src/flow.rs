@@ -12,7 +12,7 @@ impl Rule for FlowCommentRule {
         RuleDefinition {
             id: "FC001",
             name: "flow-comments",
-            description: "A substantial nested executable body needs a leading flow comment",
+            description: "A substantial nested executable body must start with a flow comment",
             default_level: Level::Warning,
             options: Vec::new(),
         }
@@ -31,7 +31,7 @@ impl Rule for FlowCommentRule {
             }
             findings.push(Finding {
                 message: format!(
-                    "{} body has {} direct statements; add a leading flow comment",
+                    "{} body has {} direct statements; add a flow comment at the start of the block",
                     body.kind.description(),
                     body.statements.len()
                 ),
@@ -58,27 +58,25 @@ fn qualifies(context: &SourceContext, body: &Body) -> bool {
         })
 }
 
-/// Accept an ordinary explanation associated with this exact body.
+/// Accept an ordinary explanation in the block's first comment group.
 fn has_flow_comment(context: &SourceContext, body: &Body) -> bool {
+    let mut boundary = body.span.start + 1;
+    let first = context
+        .comments
+        .partition_point(|comment| comment.span.start < boundary);
     let mut group = Vec::<&Comment>::new();
-    // Adjacent lines form one explanation, so continuation lines cannot disguise a license header.
-    for comment in body
-        .annotations
-        .iter()
-        .filter_map(|span| context.comment(*span))
-    {
-        if !comment.in_scope || !comment.standalone || comment.is_doc {
-            continue;
+    for comment in &context.comments[first..] {
+        // Only whitespace may precede the opening comment group; later prose cannot repair it.
+        if comment.span.end >= body.span.end || !comment.standalone || comment.is_doc {
+            break;
         }
-        if let Some(previous) = group.last() {
-            let gap = &context.text[previous.span.end..comment.span.start];
-            if !gap.trim().is_empty() || gap.bytes().filter(|byte| *byte == b'\n').count() > 1 {
-                if explanatory_group(&group) {
-                    return true;
-                }
-                group.clear();
-            }
+        let gap = &context.text[boundary..comment.span.start];
+        if !gap.trim().is_empty()
+            || (!group.is_empty() && gap.bytes().filter(|byte| *byte == b'\n').count() > 1)
+        {
+            break;
         }
+        boundary = comment.span.end;
         group.push(comment);
     }
     explanatory_group(&group)
@@ -189,11 +187,12 @@ mod tests {
         );
     }
 
-    /// Leading comments explain only their exact structural boundary.
+    /// The opening comment explains one body, never its owner, children, or siblings.
     #[test]
     fn comment_placement_and_siblings() {
-        assert!(
-            lint("fn f() {\n// Explain the primary branch.\nif x { a(); b(); c(); } }").is_empty()
+        assert_eq!(
+            lint("fn f() {\n// Explain the primary branch.\nif x { a(); b(); c(); } }").len(),
+            1
         );
         assert!(
             lint("fn f() { if x {\n// Preserve the update order.\na(); b(); c(); } }").is_empty()
@@ -202,64 +201,92 @@ mod tests {
             lint("fn f() { if x { a(); // trailing\nb(); c(); } }").len(),
             1
         );
-        assert_eq!(lint("fn f() {\n// Explain the primary branch.\nif x { a(); b(); c(); } else { a(); b(); c(); } }").len(), 1);
-        assert_eq!(lint("fn f() {\n// Explain only the outer body.\nif x { if y { a(); b(); c(); } d(); e(); } }").len(), 1);
+        assert_eq!(lint("fn f() { if x {\n// Explain the primary branch.\na(); b(); c(); } else { a(); b(); c(); } }").len(), 1);
+        assert_eq!(lint("fn f() {\n// Explain only the outer body.\nif x { if y { a(); b(); c(); } d(); e(); } }").len(), 2);
         assert_eq!(lint("fn f() { if x {\n// Explain only this parent.\nif y { a(); b(); c(); } d(); e(); } }").len(), 1);
+        assert!(lint("fn f() { if x {\n// Explain this parent.\nif y {\n// Explain this child.\na(); b(); c(); } d(); e(); } else {\n// Explain this sibling.\na(); b(); c(); } }").is_empty());
     }
 
-    /// Conditions retain independent bodies while the construct comment explains its primary body.
+    /// Conditions and primary bodies each need their own opening explanation.
     #[test]
     fn condition_bodies_are_independent() {
-        let source =
-            "fn f() {\n// Explain the chosen branch.\nif { a(); b(); true } { a(); b(); c(); } }";
-        assert_eq!(lint(source).len(), 1);
-        let source =
-            "fn f() {\n// Explain the loop.\nwhile { a(); b(); true } { a(); b(); c(); } }";
-        assert_eq!(lint(source).len(), 1);
+        for keyword in ["if", "while"] {
+            assert_eq!(lint(&format!("fn f() {{\n// Explain the construct.\n{keyword} {{ a(); b(); true }} {{ a(); b(); c(); }} }}")).len(), 2);
+            assert_eq!(lint(&format!("fn f() {{ {keyword} {{\n// Evaluate the condition in order.\na(); b(); true }} {{ a(); b(); c(); }} }}")).len(), 1);
+            assert_eq!(lint(&format!("fn f() {{ {keyword} {{ a(); b(); true }} {{\n// Preserve the update order.\na(); b(); c(); }} }}")).len(), 1);
+            assert!(lint(&format!("fn f() {{ {keyword} {{\n// Evaluate the condition in order.\na(); b(); true }} {{\n// Preserve the update order.\na(); b(); c(); }} }}")).is_empty());
+        }
     }
 
-    /// Ordinary comments survive attributes, while docs and bounded placeholders do not qualify.
+    /// Explanations precede attributes and local items rather than only executable statements.
     #[test]
-    fn comments_attributes_and_placeholders() {
-        assert!(
-            lint(
-                "fn f() {\n// Preserve order.\n#[cfg(feature = \"x\")]\nif x { a(); b(); c(); } }"
-            )
-            .is_empty()
-        );
+    fn comments_must_be_first_inside_the_block() {
+        for prefix in ["#[cfg(feature = \"x\")]", "fn local() {}", ";"] {
+            assert_eq!(
+                lint(&format!(
+                    "fn f() {{ if x {{ {prefix}\n// Preserve order.\na(); b(); c(); }} }}"
+                ))
+                .len(),
+                1
+            );
+            assert!(
+                lint(&format!(
+                    "fn f() {{ if x {{\n// Preserve order.\n{prefix}\na(); b(); c(); }} }}"
+                ))
+                .is_empty()
+            );
+        }
+        assert!(lint("fn f() { if x {\n// Explain this body before its local test item.\n#[test] fn local() {} a(); b(); c(); } }").is_empty());
+        assert!(lint("fn f() { if x {\n\n    // Preserve order.\na(); b(); c(); } }").is_empty());
+        assert_eq!(lint("fn f() { if x { fn local() {\n// Explain only the nested function.\na(); b(); c(); } a(); b(); c(); } }").len(), 1);
+    }
+
+    /// Ordinary comments qualify while docs, directives, and bounded placeholders do not.
+    #[test]
+    fn comments_and_placeholders() {
         assert!(
             lint("fn f() { if x {\n/* Preserve\n * this order. */\na(); b(); c(); } }").is_empty()
         );
-        assert_eq!(
-            lint("fn f() {\n/// API docs do not explain flow.\nif x { a(); b(); c(); } }").len(),
-            1
-        );
-        assert_eq!(
-            lint("fn f() {\n// TODO:\n// FIXME!\nif x { a(); b(); c(); } }").len(),
-            1
-        );
-        assert!(lint("fn f() {\n// TODO: preserve updates until the cache is ready.\nif x { a(); b(); c(); } }").is_empty());
-        assert_eq!(lint("fn f() {\n// evenflow: allow(FC001): Deliberate exception.\nif x { a(); b(); c(); } }").len(), 1);
-        assert!(lint("fn f() {\n// ✓\nif x { a(); b(); c(); } }").is_empty());
+        for comment in [
+            "/// API docs do not explain flow.",
+            "/// API docs.\n// Later prose cannot replace the opening comment.",
+            "// TODO:\n// FIXME!",
+            "// evenflow: allow(FC001): Deliberate exception.",
+            "//",
+        ] {
+            assert_eq!(
+                lint(&format!(
+                    "fn f() {{ if x {{\n{comment}\na(); b(); c(); }} }}"
+                ))
+                .len(),
+                1
+            );
+        }
+        assert!(lint("fn f() { if x {\n// TODO: preserve updates until the cache is ready.\na(); b(); c(); } }").is_empty());
+        assert!(lint("fn f() { if x {\n// ✓\na(); b(); c(); } }").is_empty());
     }
 
-    /// Explicit license headers and their continuation lines are never flow explanations.
+    /// The first comment group cannot be a license header, even when later prose explains flow.
     #[test]
     fn license_headers_are_bounded_and_grouped() {
-        assert_eq!(
-            lint("fn f() {\n// SPDX-License-Identifier: MIT\nif x { a(); b(); c(); } }").len(),
-            1
-        );
-        assert_eq!(lint("fn f() {\n// Copyright 2026 Example Authors\n// All rights reserved.\nif x { a(); b(); c(); } }").len(), 1);
-        assert_eq!(lint("fn f() {\n/* License information\n * SPDX-License-Identifier: Apache-2.0\n */\nif x { a(); b(); c(); } }").len(), 1);
-        assert!(lint("fn f() {\n// Copyright 2026 Example Authors\n\n// Keep the writes ordered.\nif x { a(); b(); c(); } }").is_empty());
-        assert!(lint("fn f() {\n// Check the license before allowing the update.\nif x { a(); b(); c(); } }").is_empty());
-        assert!(lint("fn f() {\n// Copyright checks must finish before persisting the package.\nif x { a(); b(); c(); } }").is_empty());
-        assert_eq!(lint("fn f() {\n// Copyright (c) Example Authors\n// All rights reserved.\nif x { a(); b(); c(); } }").len(), 1);
-        assert_eq!(
-            lint("fn f() {\n// Copyright © Example Authors\nif x { a(); b(); c(); } }").len(),
-            1
-        );
+        for comment in [
+            "// SPDX-License-Identifier: MIT",
+            "// Copyright 2026 Example Authors\n// All rights reserved.",
+            "/* License information\n * SPDX-License-Identifier: Apache-2.0\n */",
+            "// Copyright 2026 Example Authors\n\n// Keep the writes ordered.",
+            "// Copyright (c) Example Authors\n// All rights reserved.",
+            "// Copyright © Example Authors",
+        ] {
+            assert_eq!(
+                lint(&format!(
+                    "fn f() {{ if x {{\n{comment}\na(); b(); c(); }} }}"
+                ))
+                .len(),
+                1
+            );
+        }
+        assert!(lint("fn f() { if x {\n// Check the license before allowing the update.\na(); b(); c(); } }").is_empty());
+        assert!(lint("fn f() { if x {\n// Copyright checks must finish before persisting the package.\na(); b(); c(); } }").is_empty());
     }
 
     /// Logging and simple field copies form a narrow exemption; computed work does not.
