@@ -28,17 +28,69 @@ async function fixture(t) {
 test('all four artifacts are required and receive deterministic content checksums', async (t) => {
   const { cwd, directory, context } = await fixture(t);
   await verifyRelease({}, context);
-  await prepare({}, context);
+  let published = 0;
+  const publisher = { publish: async (options) => {
+    assert.equal(options.cwd, cwd);
+    assert.equal(options.version, version);
+    assert.equal(options.env, context.env);
+    published += 1;
+  } };
+  await prepare({}, context, publisher);
+  assert.equal(published, 1);
   const checksums = await readFile(join(directory, 'SHA256SUMS'), 'utf8');
   const expected = expectedAssets(version).map((name) => {
     const digest = createHash('sha256').update(`artifact: ${name}\n`).digest('hex');
     return `${digest}  ${name}\n`;
   }).join('');
   assert.equal(checksums, expected);
-  await prepare({}, context);
+  await prepare({}, context, publisher);
+  assert.equal(published, 2);
   assert.equal(await readFile(join(cwd, 'dist', 'SHA256SUMS'), 'utf8'), checksums);
   await writeFile(join(directory, expectedAssets(version)[0]), 'changed artifact');
   await assert.rejects(verifyRelease({}, context), /SHA256SUMS does not match/);
+});
+
+test('a registry publication failure stops preparation before checksums are written', async (t) => {
+  const { directory, context } = await fixture(t);
+  const failure = new Error('Registry publication failed');
+  let calls = 0;
+  await assert.rejects(prepare({}, context, { publish: async () => {
+    calls += 1;
+    await assert.rejects(readFile(join(directory, 'SHA256SUMS')), { code: 'ENOENT' });
+    throw failure;
+  } }), (error) => error === failure);
+  assert.equal(calls, 1);
+  await assert.rejects(readFile(join(directory, 'SHA256SUMS')), { code: 'ENOENT' });
+});
+
+test('final checksums cover the canonical Cargo archive produced by publication', async (t) => {
+  const { directory, context } = await fixture(t);
+  const name = `evenflow-${version}.crate`;
+  const canonical = Buffer.from('Canonical Cargo publication archive\n');
+  const original = await readFile(join(directory, name));
+  let calls = 0;
+  await prepare({}, context, { publish: async () => {
+    calls += 1;
+    await assert.rejects(readFile(join(directory, 'SHA256SUMS')), { code: 'ENOENT' });
+    await writeFile(join(directory, name), canonical);
+  } });
+  assert.equal(calls, 1);
+  const checksums = await readFile(join(directory, 'SHA256SUMS'), 'utf8');
+  const digest = createHash('sha256').update(canonical).digest('hex');
+  const originalDigest = createHash('sha256').update(original).digest('hex');
+  assert.ok(checksums.includes(`${digest}  ${name}\n`));
+  assert.ok(!checksums.includes(`${originalDigest}  ${name}\n`));
+  assert.equal(checksums.trim().split('\n').length, 4);
+  await verifyRelease({}, context);
+});
+
+test('invalid release assets prevent the registry publisher from running', async (t) => {
+  const { directory, context } = await fixture(t);
+  await rm(join(directory, `evenflow-${version}.crate`));
+  let calls = 0;
+  await assert.rejects(prepare({}, context, { publish: async () => { calls += 1; } }), /exactly the three target archives/);
+  assert.equal(calls, 0);
+  await assert.rejects(readFile(join(directory, 'SHA256SUMS')), { code: 'ENOENT' });
 });
 
 test('publication rejects a different planned version, planned commit, checkout, or no-release plan', async (t) => {

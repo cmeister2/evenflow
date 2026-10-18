@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { lstat, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { validateVersion } from './version.mjs';
+import { publishCrate } from './crates.mjs';
 
 /** Every release carries all supported executables and its Cargo source package. */
 export function expectedAssets(version) {
@@ -67,9 +68,11 @@ export async function verifyRelease(_options, context) {
   await verifyAssets(directory, version);
 }
 
-/** Recheck the inputs, then add the checksums attached by the GitHub plugin. */
-export async function prepare(_options, context) {
+/** Publish the verified source package before tagging, then checksum the final assets. */
+export async function prepare(_options, context, { publish = publishCrate } = {}) {
   const { directory, version } = await verifyPlan(context);
+  await verifyAssets(directory, version);
+  await publish({ cwd: context.cwd ?? process.cwd(), version, env: context.env ?? process.env });
   const checksums = await verifyAssets(directory, version);
   await writeFile(join(directory, 'SHA256SUMS'), checksums);
 }

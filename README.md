@@ -18,10 +18,15 @@ platform's C development tools: `build-essential` on Ubuntu, Xcode Command Line
 Tools on macOS, or Visual Studio C++ Build Tools on Windows. The Cargo package uses
 Rust edition 2024 and includes `Cargo.lock`.
 
-From this source checkout, install with the locked dependencies:
+Install the published package with locked dependencies:
 
 ```sh
-cargo install --locked --path .
+cargo install --locked evenflow
+```
+
+From a source checkout, use `cargo install --locked --path .`. Run the linter with:
+
+```sh
 evenflow check
 evenflow check src/ worker/src/
 evenflow check . --strict
@@ -38,7 +43,8 @@ Each release also includes `evenflow-VERSION.crate` and `SHA256SUMS`. Extract th
 matching executable and place it on `PATH`. A prebuilt executable needs the
 matching operating system/runtime, but no Rust compiler, Cargo, Node.js,
 separately installed parser, or grammar. Linux archives are built on Ubuntu 22.04
-and use its system C runtime. Releases are not published to npm or crates.io.
+and use its system C runtime. The Rust package is also published to
+[crates.io](https://crates.io/crates/evenflow).
 
 A scan is offline: it reads source and local configuration, and does not contact
 a service or build the checked project. Source installation may download Cargo
@@ -292,13 +298,21 @@ checks on all three native platforms, and installation from the packaged Cargo
 source. The required `Success` check aggregates these results and gates
 publication. CI calculates the release version, stamps it into `Cargo.toml` and
 `Cargo.lock` before building, and checks each executable's `--version` output.
-The versioned archives, source package, checksums, and generated release notes are
-then published together on GitHub Releases.
+The verified source package is published to crates.io before the version is
+tagged. GitHub Releases then receives the native archives, the same published
+source archive, checksums, and generated release notes.
+
+Configure the `CARGO_REGISTRY_TOKEN` repository Actions secret with permission to
+publish `evenflow`, including new-crate publication for the initial release. The
+token is passed only to the main-branch publication step. Missing credentials or
+registry errors stop publication before tag creation. A retry accepts an already
+published version only when its package checksum matches the prepared package.
 
 Pull requests run a semantic-release dry run, show the proposed version and notes
 in the workflow summary, and use that version for the native-platform and
 source-installation checks. If no release is proposed, builds use the checked-in
-development version. Publishing runs only on `main`.
+development version. PR source-package checks also run `cargo publish --dry-run`
+without a registry token. Publishing runs only on `main`.
 
 Use Conventional Commits for changes merged to `main`:
 
