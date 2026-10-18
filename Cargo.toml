@@ -6,7 +6,7 @@ rust-version = "1.90.0"
 description = "Opinionated structural Rust linting alongside Clippy"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
-include = ["src/**", "tests/**", "scripts/**", "Cargo.toml", "Cargo.lock", "README.md", "LICENSE-*", "evenflow.toml"]
+include = ["/src/**", "/tests/**", "/scripts/**", "/Cargo.toml", "/Cargo.lock", "/README.md", "/LICENSE-*", "/evenflow.toml"]
 
 [dependencies]
 clap = { version = "4.6", features = ["derive"] }

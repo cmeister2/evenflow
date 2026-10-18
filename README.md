@@ -280,7 +280,7 @@ bash scripts/release-smoke.sh target/release/evenflow
 
 The smoke script copies the executable and fixtures to a temporary directory,
 runs with an empty `PATH` and environment, and checks clean, lint-failing, and
-syntax-failing JSON scans. The release workflow additionally installs from the
+syntax-failing JSON scans. The CI workflow additionally installs from the
 packaged source with `cargo install --locked`, then checks that executable.
 Nothing invokes Evenflow recursively from a build script or during analysis.
 
@@ -289,7 +289,8 @@ Nothing invokes Evenflow recursively from a build script or during analysis.
 CI runs semantic-release on pushes to `main`. Publication waits for all checks:
 stable and minimum-supported Rust verification, tests and standalone smoke
 checks on all three native platforms, and installation from the packaged Cargo
-source. CI calculates the release version, stamps it into `Cargo.toml` and
+source. The required `Success` check aggregates these results and gates
+publication. CI calculates the release version, stamps it into `Cargo.toml` and
 `Cargo.lock` before building, and checks each executable's `--version` output.
 The versioned archives, source package, checksums, and generated release notes are
 then published together on GitHub Releases.
