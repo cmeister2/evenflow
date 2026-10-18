@@ -283,8 +283,8 @@ impl SourceContext {
     pub fn leading_comments(&self, anchor: usize) -> Vec<&Comment> {
         let mut boundary = anchor;
         let mut found = Vec::new();
-        // Walk decorations backwards; executable syntax always ends association.
         loop {
+            // Walk decorations backwards; executable syntax always ends association.
             let comment_index = self
                 .comments
                 .partition_point(|item| item.span.end <= boundary);
@@ -371,8 +371,8 @@ impl SourceContext {
         // Function modifiers establish the context for the whole function subtree.
         if node.kind() == "function_item" {
             context.function = Some(node_span(node));
-            // Record each modifier independently because Rust permits their combination.
             if let Some(modifiers) = named_child(node, "function_modifiers") {
+                // Record each modifier independently because Rust permits their combination.
                 context.is_const |= has_child_token(modifiers, "const");
                 context.is_async |= has_child_token(modifiers, "async");
                 context.is_unsafe |= has_child_token(modifiers, "unsafe");
@@ -381,8 +381,8 @@ impl SourceContext {
         context.is_async |= node.kind() == "async_block";
         context.is_unsafe |= node.kind() == "unsafe_block";
         let in_scope = !opaque && !context.is_const && (self.include_tests || !context.is_test);
-        // Comments and attributes remain indexed even inside excluded syntax.
         if is_comment(node) {
+            // Comments and attributes remain indexed even inside excluded syntax.
             let span = node_span(node);
             let raw = self.slice(span).to_owned();
             self.comments.push(Comment {
@@ -413,8 +413,8 @@ impl SourceContext {
         }
         let opaque = opaque || macro_node || node.kind() == "macro_definition";
         let mut next_parent = parent_body;
-        // Blocks belong to the source model even when a rule omits their scope.
         if node.kind() == "block" && !opaque {
+            // Blocks belong to the source model even when a rule omits their scope.
             let (kind, owner) = classify_body(node);
             let body_index = self.bodies.len();
             self.bodies.push(Body {
@@ -433,8 +433,8 @@ impl SourceContext {
             next_parent = Some(body_index);
         }
         let mut cursor = node.walk();
-        // Descend all original syntax; token trees stay opaque to executable analysis.
         for child in node.named_children(&mut cursor) {
+            // Descend all original syntax; token trees stay opaque to executable analysis.
             let mut child_context = context.clone();
             if field_is_const(node, child) {
                 child_context.is_const = true;
@@ -464,7 +464,7 @@ impl SourceContext {
                 comment_owners.entry(comment.span).or_insert(index);
             }
         }
-        // A nested body's own preamble cannot also explain its first child's body.
+        // A nested body's own preamble annotates that body rather than its first child's body.
         for (index, body) in self.bodies.iter().enumerate() {
             if body.kind == BodyKind::Function {
                 continue;
@@ -486,8 +486,8 @@ impl SourceContext {
                 self.comments[comment_index].in_scope = false;
             }
         }
-        // Store deterministic, duplicate-free comment targets for shared suppression handling.
         for (body, mut spans) in self.bodies.iter_mut().zip(associations) {
+            // Store deterministic, duplicate-free comment targets for shared suppression handling.
             spans.sort_unstable();
             spans.dedup();
             body.annotations = spans;
@@ -661,8 +661,8 @@ fn classify_body(block: Node<'_>) -> (BodyKind, Node<'_>) {
 fn body_anchors(owner: Node<'_>) -> Vec<usize> {
     let mut anchors = vec![owner.start_byte()];
     let mut current = owner;
-    // A containing statement can explain its first outermost executable body.
     while let Some(parent) = current.parent() {
+        // A containing statement can annotate its first outermost executable body.
         if matches!(
             parent.kind(),
             "block"
@@ -687,8 +687,8 @@ fn body_anchors(owner: Node<'_>) -> Vec<usize> {
 fn direct_statements(block: Node<'_>, source: &str) -> Vec<Statement> {
     let mut statements = Vec::new();
     let mut cursor = block.walk();
-    // Local item definitions, attributes, comments, labels, and empty semicolons do no work.
     for child in block.named_children(&mut cursor) {
+        // Local item definitions, attributes, comments, labels, and empty semicolons do no work.
         if !executable_child(child) {
             continue;
         }
@@ -822,8 +822,8 @@ struct CfgParser<'source> {
 impl CfgParser<'_> {
     /// Skip Rust whitespace between cfg tokens.
     fn whitespace(&mut self) {
-        // Comments are trivia within cfg token groups just as they are in Rust syntax.
         loop {
+            // Comments are trivia within cfg token groups just as they are in Rust syntax.
             while self
                 .source
                 .as_bytes()
@@ -891,17 +891,17 @@ impl CfgParser<'_> {
         if name.is_empty() {
             return None;
         }
-        // Name-value predicates are unknown; quoted values can contain delimiters.
         if self.consume(b'=') {
+            // Name-value predicates are unknown; quoted values can contain delimiters.
             self.whitespace();
             if self.raw_string_value() {
                 return Some(Truth::Unknown);
             }
-            // A string value is one unknown predicate even when it contains punctuation.
             if self.consume(b'"') {
+                // A string value is one unknown predicate even when it contains punctuation.
                 let mut escaped = false;
-                // Stop only at an unescaped quote so commas cannot terminate the value.
                 while let Some(byte) = self.source.as_bytes().get(self.position).copied() {
+                    // Stop only at an unescaped quote so commas cannot terminate the value.
                     self.position += 1;
                     if byte == b'"' && !escaped {
                         return Some(Truth::Unknown);
@@ -921,8 +921,8 @@ impl CfgParser<'_> {
             });
         }
         let mut values = Vec::new();
-        // Nested all/any/not predicates use the same three-valued evaluation.
         while !self.consume(b')') {
+            // Nested all/any/not predicates use the same three-valued evaluation.
             values.push(self.predicate()?);
             if self.consume(b')') {
                 break;
@@ -989,8 +989,8 @@ fn test_attribute(raw: &str) -> bool {
         return false;
     }
     let mut path = parser.identifier().to_owned();
-    // Attribute paths use Rust tokens; comments may separate any path component.
     while parser.consume(b':') {
+        // Attribute paths use Rust tokens; comments may separate any path component.
         if !parser.consume(b':') {
             return false;
         }

@@ -92,6 +92,139 @@ fn strict_promotes_warnings_and_reports_json() {
     assert!(has_id(&json(&strict), "FC001"));
 }
 
+/// Only an explanation occupying the start of the body satisfies FC001.
+#[test]
+fn flow_comments_must_precede_every_item_inside_their_body() {
+    let cases = [
+        (
+            "outside",
+            "fn work() {\n// Keep the transaction ordered.\nif ready() { prepare(); save(); commit(); } }\n",
+            true,
+        ),
+        (
+            "inside",
+            "fn work() { if ready() {\n// Keep the transaction ordered.\nprepare(); save(); commit(); } }\n",
+            false,
+        ),
+        (
+            "after_statement",
+            "fn work() { if ready() { prepare();\n// Keep the remaining transaction ordered.\nsave(); commit(); } }\n",
+            true,
+        ),
+        (
+            "after_item",
+            "fn work() { if ready() { fn helper() {}\n// Keep the transaction ordered.\nprepare(); save(); commit(); } }\n",
+            true,
+        ),
+    ];
+    for (name, source, missing) in cases {
+        let project = Project::new();
+        project.write("main.rs", source);
+        let output = project.run(&["check", "main.rs", "--strict", "--format", "json"]);
+        assert_eq!(output.status.code(), Some(i32::from(missing)), "{name}");
+        let report = json(&output);
+        assert_eq!(report["summary"]["analysis_completed"], true, "{name}");
+        let diagnostics = report["diagnostics"].as_array().expect("diagnostics array");
+        assert_eq!(diagnostics.len(), usize::from(missing), "{name}");
+        if missing {
+            assert_eq!(diagnostics[0]["rule"], "FC001", "{name}");
+        }
+    }
+}
+
+/// A summary above an if/else remains valid alongside separate flow comments in its arms.
+#[test]
+fn outside_summaries_coexist_with_each_arms_own_flow_comment() {
+    let complete = r#"fn work() {
+    // Choose normal persistence or recovery according to readiness.
+    if ready() {
+        // Persist the ordered transaction before announcing completion.
+        prepare(); save(); commit();
+    } else {
+        // Recover the transaction before scheduling another attempt.
+        reset(); schedule(); report();
+    }
+}
+"#;
+    let short = r#"fn work() {
+    // Choose normal persistence or recovery according to readiness.
+    if ready() { save(); commit(); } else { reset(); report(); }
+}
+"#;
+    let missing = complete.replace(
+        "        // Recover the transaction before scheduling another attempt.\n",
+        "",
+    );
+    for (name, source, missing_line) in [
+        ("complete", complete, None),
+        ("short", short, None),
+        ("missing_else_flow", missing.as_str(), Some(6)),
+    ] {
+        let project = Project::new();
+        project.write("main.rs", source);
+        let output = project.run(&["check", "main.rs", "--strict", "--format", "json"]);
+        assert_eq!(
+            output.status.code(),
+            Some(i32::from(missing_line.is_some())),
+            "{name}"
+        );
+        let report = json(&output);
+        assert_eq!(report["summary"]["analysis_completed"], true, "{name}");
+        let diagnostics = report["diagnostics"].as_array().expect("diagnostics array");
+        assert_eq!(
+            diagnostics.len(),
+            usize::from(missing_line.is_some()),
+            "{name}"
+        );
+        if let Some(line) = missing_line {
+            assert_eq!(diagnostics[0]["rule"], "FC001", "{name}");
+            assert_eq!(diagnostics[0]["range"]["start"]["line"], line, "{name}");
+        }
+    }
+}
+
+/// A comment inside an outer body cannot stand in for the nested body's own entry comment.
+#[test]
+fn nested_body_still_needs_its_own_first_comment() {
+    let project = Project::new();
+    project.write(
+        "main.rs",
+        "fn work() {\n\
+             if ready() {\n\
+                 // Keep preparation and completion around the retry.\n\
+                 prepare();\n\
+                 // This explanation is outside the nested retry body.\n\
+                 if should_retry() {\n\
+                     fetch(); validate(); retry();\n\
+                 }\n\
+                 finish();\n\
+             }\n\
+         }\n",
+    );
+    let output = project.run(&["check", "main.rs", "--strict", "--format", "json"]);
+    assert_eq!(output.status.code(), Some(1));
+    let report = json(&output);
+    let diagnostics = report["diagnostics"].as_array().expect("diagnostics array");
+    assert_eq!(diagnostics.len(), 1);
+    assert_eq!(diagnostics[0]["rule"], "FC001");
+    assert_eq!(diagnostics[0]["range"]["start"]["line"], 6);
+}
+
+/// Flow-comment placement does not change reasoned suppressions above a construct.
+#[test]
+fn outside_suppression_still_applies_to_the_following_body() {
+    let project = Project::new();
+    project.write(
+        "main.rs",
+        "fn work() {\n// evenflow: allow(FC001): Preserve this deliberately implicit transaction.\nif ready() { prepare(); save(); commit(); } }\n",
+    );
+    let output = project.run(&["check", "main.rs", "--strict", "--format", "json"]);
+    assert_eq!(output.status.code(), Some(0));
+    let report = json(&output);
+    assert_eq!(report["summary"]["analysis_completed"], true);
+    assert!(report["diagnostics"].as_array().unwrap().is_empty());
+}
+
 /// Strict mode retains the configured disabled state of a rule.
 #[test]
 fn off_rule_remains_off_in_strict_mode() {

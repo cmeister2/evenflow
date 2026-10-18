@@ -1,8 +1,8 @@
 //! Representative production-style code whose structural explanations are complete.
 
 fn save_if_dirty(state: &mut State) {
-    // Keep persistence ahead of the clean marker so a failed write can be retried.
     if state.is_dirty() {
+        // Keep persistence ahead of the clean marker so a failed write can be retried.
         let snapshot = state.snapshot();
         persist(snapshot);
         state.mark_clean();

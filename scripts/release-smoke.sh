@@ -18,8 +18,8 @@ python_command=$(command -v python3)
 
 cat > "$smoke_root/project/clean.rs" <<'RUST'
 fn clean() {
-    // Complete the ordered transaction only after readiness is established.
     if ready() {
+        // Complete the ordered transaction only after readiness is established.
         prepare();
         write();
         commit();
@@ -29,6 +29,7 @@ RUST
 
 cat > "$smoke_root/project/lint.rs" <<'RUST'
 fn lint() {
+    // This owner-level explanation does not occupy the start of the body.
     if ready() {
         prepare();
         write();

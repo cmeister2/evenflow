@@ -106,9 +106,9 @@ fn failure(diagnostic: Diagnostic) -> Report {
 /// Returns a message identifying an invalid pattern or unsupported path syntax.
 fn exclusions(patterns: &[String]) -> Result<GlobSet, String> {
     let mut builder = GlobSetBuilder::new();
-    // Reject nonportable paths before compiling each pattern with the same
-    // root-relative semantics used during file discovery.
     for pattern in patterns {
+        // Reject nonportable paths before compiling each pattern with the same
+        // root-relative semantics used during file discovery.
         // Configuration paths use a portable root-relative syntax, avoiding
         // platform-dependent absolute paths and traversal outside the root.
         if pattern.starts_with('/')
@@ -147,9 +147,9 @@ fn discover(
     } else {
         inputs
     };
-    // Resolve each explicit selection independently so one invalid input does
-    // not prevent analyzing other files in the same invocation.
     for input in inputs {
+        // Resolve each explicit selection independently so one invalid input does
+        // not prevent analyzing other files in the same invocation.
         let original = if input.is_absolute() {
             input.clone()
         } else {
