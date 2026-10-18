@@ -15,10 +15,10 @@ the braces around a match arm list are not executable bodies.
 
 ## Const-evaluation contexts
 
-FC001 skips const-evaluation contexts: const functions, inline const blocks,
-const/static initializer subtrees, array lengths, const generic expressions, and
-enum discriminants. This includes runtime closures nested in static initializers
-such as `LazyLock`; they are also excluded.
+Both bundled rules skip const-evaluation contexts: const functions, inline const
+blocks, const/static initializer subtrees, array lengths, const generic
+expressions, and enum discriminants. This includes runtime closures nested in
+static initializers such as `LazyLock`; they are also excluded.
 
 ## Production and test source
 
@@ -32,8 +32,8 @@ Functions with `#[test]`, `#[tokio::test]`, or `#[async_std::test]`, and definit
 test-only items under `cfg`, are skipped. Inline test modules do not hide nearby
 production code. The test filter treats `test` as false and other predicates as
 unknown through nested `all`, `any`, and `not`: `all(test, feature = "x")` is
-excluded, but `any(test, feature = "x")` stays in scope. Attribute aliases,
-`cfg_attr`, and module resolution are not evaluated. `include-tests = true`
+excluded, but `any(test, feature = "x")` stays in scope. Attribute aliases and
+`cfg_attr` are not evaluated. `include-tests = true`
 includes test paths and items; generated/build exclusions still apply.
 
 ## Parse errors
@@ -46,11 +46,15 @@ empty lint result.
 
 ## Macros and coverage notes
 
-Evenflow does not resolve names or types, expand macros, or check whether a log
-invocation emits output at runtime. Recognized logging paths are bare `trace`,
-`debug`, `info`, `warn`, and `error`, their `log::`/`tracing::` forms, bare `crit`,
-and all six levels under `slog::`. A leading `::` is normalized; aliases are not
-resolved. Logging arguments are opaque. These exact data macros are also opaque:
+Evenflow does not perform compiler name or type resolution, expand macros, or
+check whether a log invocation emits output at runtime. Recognized logging paths
+are bare `trace`, `debug`, `info`, `warn`, and `error`, their `log::`/`tracing::`
+forms, bare `crit`,
+and all six levels under `slog::`. These paths define the logging-only body
+exemption and opaque logging arguments. A leading `::` is normalized; this shared
+classification does not follow import aliases. LG001's entry check additionally
+follows the explicit bindings described below. These exact data macros are also
+opaque:
 `matches`, `std::matches`, `core::matches`, `vec`, `std::vec`, `alloc::vec`, `json`,
 and `serde_json::json`. Their arguments can hide executable code.
 
@@ -60,6 +64,30 @@ Other macro invocations containing brace-delimited token groups receive one
 not count. Macro definitions and expansions are outside coverage. EF100 remains
 advisory under `--strict`; successful analysis does not imply macro-internal
 coverage.
+
+## Entry-call path resolution
+
+[LG001](RULES.md#lg001-entry-logging) uses a bounded source-only lookup for its
+entry call. It recognizes qualified call paths and follows explicit `use`
+bindings, including renamed imports, grouped imports, and module aliases.
+Explicit `crate::` paths retain their qualification. Paths are compared in full,
+with macros and functions treated as separate kinds of entry.
+
+This follows the paths written in source; it does not establish which definition
+a dependency exports or what a call does. Re-exports and module relationships
+requiring a crate-wide module graph are opaque. An individual file does not
+establish its own crate/module prefix, so local function names, local-module
+paths, and `self::`/`super::` paths remain unresolved. Use an explicit external
+or `crate::` path, directly or through an import, when its identity is needed.
+Glob imports, conditional bindings, absolute extern-crate aliases needing a known
+crate root, method calls that need type information, and dynamic function values
+are not resolved. The rule does not guess from a matching final name or search a
+nested expression for a logging call.
+
+When the first item cannot be resolved to an allowed entry, LG001 reports a lint
+finding under its configured severity. Analysis can still complete successfully;
+`--strict` makes an enabled warning an error rather than turning this uncertainty
+into a framework analysis error.
 
 Analysis errors and coverage notes cannot be
 [locally suppressed](../README.md#local-suppressions). The

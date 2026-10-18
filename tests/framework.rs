@@ -269,8 +269,180 @@ fn duplicate_rule_ids_are_rejected() {
         .is_err()
     );
     let bundled = Registry::bundled().expect("bundled rule metadata is valid");
-    assert_eq!(bundled.definitions().len(), 1);
-    assert_eq!(bundled.definitions()[0].id, "FC001");
+    let definitions = bundled.definitions();
+    assert_eq!(definitions.len(), 2);
+    assert_eq!(definitions[0].id, "FC001");
+    assert_eq!(definitions[0].default_level, Level::Warning);
+    assert_eq!(definitions[1].id, "LG001");
+    assert_eq!(definitions[1].default_level, Level::Off);
+    assert_eq!(definitions[1].options[0].name, "allowed");
+    assert_eq!(definitions[1].options[0].kind, OptionKind::StringList);
+}
+
+/// Flow comments and entry calls remain independently enabled and independently satisfied.
+#[test]
+fn bundled_logging_and_flow_policies_are_independent() {
+    let registry = Registry::bundled().expect("bundled rules register");
+    let missing_both = "fn work() { if ready() { prepare(); save(); finish(); } }";
+    let comment_only = "fn work() { if ready() {\n// Preserve the transaction order.\nprepare(); save(); finish(); } }";
+    let entry_only = "fn work() { if ready() { tracing::info!(\"entry\"); save(); finish(); } }";
+    for (source, flow, logging, expected) in [
+        (missing_both, Level::Warning, Level::Off, vec!["FC001"]),
+        (missing_both, Level::Off, Level::Warning, vec!["LG001"]),
+        (
+            missing_both,
+            Level::Warning,
+            Level::Warning,
+            vec!["FC001", "LG001"],
+        ),
+        (comment_only, Level::Warning, Level::Warning, vec!["LG001"]),
+        (entry_only, Level::Warning, Level::Warning, vec!["FC001"]),
+    ] {
+        let settings = AnalysisSettings {
+            strict: true,
+            levels: std::collections::BTreeMap::from([
+                ("FC001".into(), flow),
+                ("LG001".into(), logging),
+            ]),
+            ..AnalysisSettings::default()
+        };
+        let result = analyze_source(source.as_bytes(), "standalone.rs", &settings, &registry);
+        assert!(result.completed, "{source}");
+        assert_eq!(
+            result
+                .diagnostics
+                .iter()
+                .map(|item| item.rule.as_str())
+                .collect::<Vec<_>>(),
+            expected,
+            "{source}"
+        );
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .all(|item| item.severity == Severity::Error)
+        );
+    }
+}
+
+/// Suppressing one bundled rule does not suppress the other finding on that same body.
+#[test]
+fn logging_and_flow_suppressions_are_rule_specific() {
+    let registry = Registry::bundled().expect("bundled rules register");
+    let settings = AnalysisSettings {
+        levels: std::collections::BTreeMap::from([("LG001".into(), Level::Warning)]),
+        ..AnalysisSettings::default()
+    };
+    for (suppressed, remaining) in [("LG001", "FC001"), ("FC001", "LG001")] {
+        let source = format!(
+            "fn work() {{\n// evenflow: allow({suppressed}): This body intentionally omits the policy.\nif ready() {{ prepare(); save(); finish(); }} }}"
+        );
+        let result = analyze_source(source.as_bytes(), "standalone.rs", &settings, &registry);
+        assert!(result.completed, "{suppressed}");
+        assert_eq!(result.diagnostics.len(), 1, "{suppressed}");
+        assert_eq!(result.diagnostics[0].rule, remaining);
+    }
+    let result = analyze_source(
+        b"fn work() { if ready() {\n// evenflow: allow(LG001): Avoid duplicate logging for this transaction.\n// Preserve the transaction order.\nprepare(); save(); finish(); } }",
+        "standalone.rs",
+        &settings,
+        &registry,
+    );
+    assert!(result.completed);
+    assert!(result.diagnostics.is_empty());
+}
+
+/// A logging suppression belongs to one body and cannot hide descendant or sibling findings.
+#[test]
+fn logging_suppressions_do_not_propagate_to_other_bodies() {
+    let registry = Registry::bundled().expect("bundled rules register");
+    let settings = AnalysisSettings {
+        levels: std::collections::BTreeMap::from([("LG001".into(), Level::Warning)]),
+        ..AnalysisSettings::default()
+    };
+    for (source, remaining_line) in [
+        (
+            "fn work() {\n// evenflow: allow(LG001): The outer transaction is logged by its caller.\nif ready() {\n// Keep the transaction order stable.\nif child() {\n// Keep this child transaction together.\nprepare(); save(); finish();\n}\nafter(); finish();\n} }",
+            5,
+        ),
+        (
+            "fn work() {\n// evenflow: allow(LG001): The first transaction is logged by its caller.\nif ready() {\n// Keep the transaction order stable.\nprepare(); save(); finish();\n}\nif other() {\n// Keep this second transaction together.\nprepare(); save(); finish();\n} }",
+            7,
+        ),
+    ] {
+        let result = analyze_source(source.as_bytes(), "standalone.rs", &settings, &registry);
+        assert!(result.completed, "{source}");
+        assert_eq!(result.diagnostics.len(), 1, "{source}");
+        assert_eq!(result.diagnostics[0].rule, "LG001");
+        assert_eq!(
+            result.diagnostics[0]
+                .range
+                .expect("located body")
+                .start
+                .line,
+            remaining_line
+        );
+    }
+}
+
+/// Known disabled-rule directives stay inactive; enabled unused directives remain errors.
+#[test]
+fn logging_suppression_validation_respects_the_disabled_default() {
+    let registry = Registry::bundled().expect("bundled rules register");
+    let source = b"fn work() {\n// evenflow: allow(LG001): Caller already owns this trace.\nif ready() {\n// Preserve the transaction order.\ntracing::info!(\"entry\"); save(); finish(); } }";
+    let inactive = analyze_source(
+        source,
+        "standalone.rs",
+        &AnalysisSettings::default(),
+        &registry,
+    );
+    assert!(inactive.completed);
+    assert!(inactive.diagnostics.is_empty());
+    let enabled = analyze_source(
+        source,
+        "standalone.rs",
+        &AnalysisSettings {
+            levels: std::collections::BTreeMap::from([("LG001".into(), Level::Warning)]),
+            ..AnalysisSettings::default()
+        },
+        &registry,
+    );
+    assert!(!enabled.completed);
+    assert_eq!(enabled.diagnostics.len(), 1);
+    assert_eq!(enabled.diagnostics[0].rule, "EF000");
+    assert_eq!(
+        enabled.diagnostics[0].category.as_deref(),
+        Some("suppression")
+    );
+}
+
+/// The library validates the logging allowlist before skipping disabled enforcement.
+#[test]
+fn disabled_logging_options_still_use_semantic_validation_in_the_library() {
+    let registry = Registry::bundled().expect("bundled rules register");
+    for allowed in [
+        toml::Value::Boolean(false),
+        toml::Value::Array(Vec::new()),
+        toml::Value::Array(vec![toml::Value::String("info!".into())]),
+        toml::Value::Array(vec![toml::Value::String("tracing::info".into())]),
+    ] {
+        let settings = AnalysisSettings {
+            levels: std::collections::BTreeMap::from([("LG001".into(), Level::Off)]),
+            options: std::collections::BTreeMap::from([(
+                "LG001".into(),
+                toml::Table::from_iter([("allowed".into(), allowed)]),
+            )]),
+            ..AnalysisSettings::default()
+        };
+        let result = analyze_source(b"fn work() {}", "standalone.rs", &settings, &registry);
+        assert!(!result.completed);
+        assert_eq!(result.diagnostics.len(), 1);
+        assert_eq!(
+            result.diagnostics[0].category.as_deref(),
+            Some("configuration")
+        );
+    }
 }
 
 /// Verify decoding and complete-file syntax errors remain visible with rules off.

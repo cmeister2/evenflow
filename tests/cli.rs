@@ -59,6 +59,9 @@ impl Drop for Project {
 /// A missing explanation in a qualifying branch produces one FC001 finding.
 const MISSING_COMMENT: &str = "fn work() { if ready() { let a = 1; let b = 2; consume(a, b); } }\n";
 
+/// A substantial body with a flow comment but no entry logging call.
+const MISSING_ENTRY: &str = "fn work() { if ready() {\n// Preserve the ordered transaction.\nprepare(); save(); commit(); } }\n";
+
 /// Decode an output document and retain command errors in assertion context.
 fn json(output: &Output) -> Value {
     serde_json::from_slice(&output.stdout).unwrap_or_else(|error| {
@@ -474,16 +477,299 @@ fn diagnostics_are_sorted_by_normalized_path() {
     assert_eq!(document["diagnostics"][1]["path"], "z.rs");
 }
 
-/// The rule catalog describes the shipped rule and excludes speculative rules.
+/// The rule catalog exposes enforcement defaults and the logging allowlist schema.
 #[test]
 fn rules_lists_the_bundled_catalog() {
     let project = Project::new();
     let output = project.run(&["rules"]);
     assert_eq!(output.status.code(), Some(0));
     let text = String::from_utf8(output.stdout).unwrap();
-    assert!(text.contains("FC001"));
-    assert!(text.contains("warning"));
+    assert!(text.contains("FC001 [warning]"));
+    assert!(text.contains("LG001 [off]"));
+    assert!(text.contains("entry-logging"));
+    assert!(text.contains("allowed (string-list)"));
     assert!(!text.contains("FC002"));
+    let output = project.run(&["rules", "--format", "json"]);
+    assert_eq!(output.status.code(), Some(0));
+    let document = json(&output);
+    let rules = document["rules"].as_array().expect("rules array");
+    assert_eq!(rules.len(), 2);
+    assert_eq!(rules[0]["id"], "FC001");
+    assert_eq!(rules[1]["id"], "LG001");
+    assert_eq!(rules[1]["default"], "off");
+    assert_eq!(rules[1]["options"][0]["name"], "allowed");
+    assert_eq!(rules[1]["options"][0]["kind"], "string-list");
+}
+
+/// Strict enforcement does not implicitly opt projects into entry logging.
+#[test]
+fn entry_logging_is_off_by_default_even_in_strict_mode() {
+    let project = Project::new();
+    project.write("main.rs", MISSING_ENTRY);
+    let output = project.run(&["check", "--strict", "--format", "json"]);
+    assert_eq!(output.status.code(), Some(0));
+    let document = json(&output);
+    assert_eq!(document["summary"]["analysis_completed"], true);
+    assert!(document["diagnostics"].as_array().unwrap().is_empty());
+}
+
+/// An enabled logging rule follows warning, error, strict, and explicit-off policy.
+#[test]
+fn entry_logging_enforcement_uses_shared_exit_and_severity_policy() {
+    for (level, strict, code, severity) in [
+        ("warning", false, 0, Some("warning")),
+        ("warning", true, 1, Some("error")),
+        ("error", false, 1, Some("error")),
+        ("off", true, 0, None),
+    ] {
+        let project = Project::new();
+        project.write("main.rs", MISSING_ENTRY);
+        project.write("evenflow.toml", &format!("[rules]\nLG001 = \"{level}\"\n"));
+        let mut arguments = vec!["check", "main.rs", "--format", "json"];
+        if strict {
+            arguments.push("--strict");
+        }
+        let output = project.run(&arguments);
+        assert_eq!(output.status.code(), Some(code), "{level}, strict={strict}");
+        let document = json(&output);
+        assert_eq!(document["summary"]["analysis_completed"], true);
+        let diagnostics = document["diagnostics"].as_array().unwrap();
+        assert_eq!(diagnostics.len(), usize::from(severity.is_some()));
+        if let Some(severity) = severity {
+            assert_eq!(diagnostics[0]["rule"], "LG001");
+            assert_eq!(diagnostics[0]["kind"], "lint");
+            assert_eq!(diagnostics[0]["severity"], severity);
+            assert_eq!(diagnostics[0]["path"], "main.rs");
+            assert!(!diagnostics[0]["range"].is_null());
+        }
+    }
+}
+
+/// Both typed and semantic allowlist errors fail before discovery, even while off.
+#[test]
+fn disabled_entry_logging_still_validates_its_allowlist() {
+    for allowed in [
+        "7",
+        "\"tracing::info!\"",
+        "[\"tracing::info!\", 7]",
+        "[]",
+        "[\"\"]",
+        "[\"info!\"]",
+        "[\"tracing::info\"]",
+        "[\"crate::logging::enter(\"]",
+        "[\"tracing::::info!\"]",
+        "[\"crate::logging::enter(); other()\"]",
+    ] {
+        let project = Project::new();
+        project.write("main.rs", "fn main() {}\n");
+        project.write(
+            "evenflow.toml",
+            &format!("[rules]\nLG001 = \"off\"\n[options.LG001]\nallowed = {allowed}\n"),
+        );
+        let output = project.run(&["check", "--format", "json"]);
+        assert_eq!(output.status.code(), Some(2), "{allowed}");
+        let document = json(&output);
+        assert_eq!(document["summary"]["selected_files"], 0, "{allowed}");
+        assert_eq!(document["summary"]["analysis_completed"], false);
+        assert!(has_id(&document, "EF000"));
+        assert_eq!(document["diagnostics"][0]["category"], "configuration");
+    }
+}
+
+/// Qualified identities, explicit imports, and aliases match without suffix guessing.
+#[test]
+fn entry_logging_matches_resolved_macro_and_function_identities() {
+    let cases = [
+        (
+            "qualified_macro",
+            "",
+            "tracing::info!(\"entry\");",
+            None,
+            false,
+        ),
+        (
+            "imported_macro",
+            "use tracing::info;",
+            "info!(\"entry\");",
+            None,
+            false,
+        ),
+        (
+            "macro_alias",
+            "use tracing::{info as entry};",
+            "entry!(\"entry\");",
+            None,
+            false,
+        ),
+        (
+            "wrong_qualified_macro",
+            "",
+            "other::info!(\"entry\");",
+            None,
+            true,
+        ),
+        (
+            "wrong_import",
+            "use other::info;",
+            "info!(\"entry\");",
+            None,
+            true,
+        ),
+        ("unimported_macro", "", "info!(\"entry\");", None, true),
+        ("wrong_namespace", "", "tracing::info();", None, true),
+        (
+            "qualified_function",
+            "mod logging { pub fn enter() {} }",
+            "crate::logging::enter();",
+            Some("crate::logging::enter()"),
+            false,
+        ),
+        (
+            "function_alias",
+            "mod logging { pub fn enter() {} } use crate::logging::enter as start;",
+            "start();",
+            Some("crate::logging::enter()"),
+            false,
+        ),
+        (
+            "wrong_function",
+            "mod logging { pub fn enter() {} pub fn other() {} }",
+            "crate::logging::other();",
+            Some("crate::logging::enter()"),
+            true,
+        ),
+    ];
+    for (name, imports, entry, allowed, missing) in cases {
+        let project = Project::new();
+        project.write(
+            "main.rs",
+            &format!("{imports}\nfn work() {{ if ready() {{\n// Preserve the ordered transaction.\n{entry}\nwork(); finish(); }} }}\n"),
+        );
+        let mut configuration = "[rules]\nLG001 = \"error\"\n".to_owned();
+        if let Some(allowed) = allowed {
+            configuration.push_str(&format!("[options.LG001]\nallowed = [\"{allowed}\"]\n"));
+        }
+        project.write("evenflow.toml", &configuration);
+        let output = project.run(&["check", "--format", "json"]);
+        assert_eq!(output.status.code(), Some(i32::from(missing)), "{name}");
+        let document = json(&output);
+        assert_eq!(document["summary"]["analysis_completed"], true, "{name}");
+        assert_eq!(has_id(&document, "LG001"), missing, "{name}");
+        assert!(!has_id(&document, "FC001"), "{name}");
+        assert!(!has_id(&document, "EF000"), "{name}");
+        if name == "unimported_macro" {
+            assert!(
+                document["diagnostics"][0]["message"]
+                    .as_str()
+                    .unwrap()
+                    .contains("resolve")
+            );
+        }
+    }
+}
+
+/// Comments are ignored for entry order; attributes, declarations and nested calls are not.
+#[test]
+fn entry_logging_requires_the_first_non_comment_item() {
+    for (name, first, missing) in [
+        (
+            "comments",
+            "// An additional explanation is harmless.\ntracing::info!(\"entry\"); work(); finish();",
+            false,
+        ),
+        (
+            "attribute",
+            "#[cfg(feature = \"verbose\")] tracing::info!(\"entry\"); work(); finish();",
+            true,
+        ),
+        (
+            "local_function",
+            "fn helper() {} tracing::info!(\"entry\"); work(); finish();",
+            true,
+        ),
+        (
+            "local_import",
+            "use tracing::info; info!(\"entry\"); work(); finish();",
+            true,
+        ),
+        (
+            "later_call",
+            "work(); tracing::info!(\"entry\"); finish();",
+            true,
+        ),
+        (
+            "nested_argument",
+            "wrapper(tracing::info!(\"entry\")); work(); finish();",
+            true,
+        ),
+        (
+            "initializer",
+            "let entry = tracing::info!(\"entry\"); work(); finish();",
+            true,
+        ),
+    ] {
+        let project = Project::new();
+        project.write("evenflow.toml", "[rules]\nLG001 = \"error\"\n");
+        project.write(
+            "main.rs",
+            &format!(
+                "fn work() {{ if ready() {{\n// Preserve the ordered transaction.\n{first}\n}} }}\n"
+            ),
+        );
+        let output = project.run(&["check", "--strict", "--format", "json"]);
+        assert_eq!(output.status.code(), Some(i32::from(missing)), "{name}");
+        let document = json(&output);
+        assert_eq!(document["summary"]["analysis_completed"], true, "{name}");
+        assert_eq!(has_id(&document, "LG001"), missing, "{name}");
+        assert!(!has_id(&document, "FC001"), "{name}");
+    }
+}
+
+/// Sibling branches need independent entry calls even when each has a flow comment.
+#[test]
+fn entry_logging_checks_both_arms_independently() {
+    let source = "fn work() { if ready() {\n// Commit the prepared transaction.\ntracing::info!(\"commit\"); work(); finish();\n} else {\n// Recover before retrying.\nprepare(); retry(); finish();\n} }\n";
+    let project = Project::new();
+    project.write("evenflow.toml", "[rules]\nLG001 = \"error\"\n");
+    project.write("main.rs", source);
+    let output = project.run(&["check", "--format", "json"]);
+    assert_eq!(output.status.code(), Some(1));
+    let document = json(&output);
+    assert_eq!(document["diagnostics"].as_array().unwrap().len(), 1);
+    assert_eq!(document["diagnostics"][0]["rule"], "LG001");
+    assert_eq!(document["diagnostics"][0]["range"]["start"]["line"], 4);
+    project.write(
+        "main.rs",
+        &source.replace(
+            "prepare(); retry();",
+            "tracing::debug!(\"retry\"); retry();",
+        ),
+    );
+    let output = project.run(&["check", "--strict", "--format", "json"]);
+    assert_eq!(output.status.code(), Some(0));
+    assert!(json(&output)["diagnostics"].as_array().unwrap().is_empty());
+}
+
+/// Logging shares the flow rule's scope, statement threshold, and whole-body exemptions.
+#[test]
+fn entry_logging_uses_the_shared_substantial_body_policy() {
+    for source in [
+        "fn work() { prepare(); save(); finish(); }",
+        "fn work() { if ready() { prepare(); save(); } }",
+        "const fn work() { if ready() { prepare(); save(); finish(); } }",
+        "fn work() { if ready() { object.a = a; object.b = b; object.c = c; } }",
+        "fn work() { if ready() { tracing::warn!(\"one\"); tracing::error!(\"two\"); tracing::warn!(\"three\"); } }",
+    ] {
+        let project = Project::new();
+        project.write("evenflow.toml", "[rules]\nLG001 = \"error\"\n");
+        project.write("main.rs", source);
+        let output = project.run(&["check", "--strict", "--format", "json"]);
+        assert_eq!(output.status.code(), Some(0), "{source}");
+        assert!(
+            json(&output)["diagnostics"].as_array().unwrap().is_empty(),
+            "{source}"
+        );
+    }
 }
 
 /// Coverage notes remain advisory when strict enforcement is enabled.

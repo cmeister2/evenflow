@@ -47,6 +47,9 @@ unique stable ID, name, description, default level, and typed options. IDs begin
 with `EF` are reserved for framework diagnostics. Register the implementation in
 `Registry::bundled()`.
 
+Override `Rule::validate_options` for semantic checks beyond option types; these
+checks also run when the rule is disabled.
+
 Use [`SourceContext`](src/source.rs) for the parsed tree, body facts, comments,
 attributes, and original source spans. Return structured `Finding` values with
 the diagnostic span, suppression target, and eligible annotation spans. Rules

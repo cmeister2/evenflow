@@ -19,7 +19,7 @@ Prebuilt binaries are available from
 
 ## Documentation
 
-- [Bundled rules](docs/RULES.md): FC001 flow comments, with examples and exemptions.
+- [Bundled rules](docs/RULES.md): behavior, examples, and exemptions.
 - [Scope and coverage](docs/SCOPE.md): checked code, exclusions, and macro limitations.
 - [Diagnostics and exit status](docs/DIAGNOSTICS.md): text output, JSON schema, and exit codes.
 - [Development](DEVELOPMENT.md): prerequisites, local commands, and adding rules.
@@ -34,18 +34,14 @@ and the target project's Cargo manifest is not required.
 ```toml
 exclude = ["src/bindings/**", "src/test_support/**"]
 include-tests = false
-
-[rules]
-FC001 = "warning"
 ```
 
-Rules accept `off`, `warning`, and `error`. Omitted rules use their registered
-defaults; FC001 defaults to `warning`. Warnings do not fail a run unless
-`--strict` promotes them to errors. Strict mode does not enable disabled rules.
-`[options.RULE_ID]` is reserved for each registered rule's typed options; FC001
-has no tunable options. Unknown settings, rule IDs, options, and invalid types
-are errors, even when the affected rule is off. `evenflow rules` lists the
-production catalog, defaults, descriptions, and available options.
+Set rule levels to `off`, `warning`, or `error` in `[rules]`, using IDs listed by
+`evenflow rules`. Omitted rules use their registered defaults. Warnings do not
+fail a run unless `--strict` promotes them to errors. Strict mode does not enable
+disabled rules. Unknown settings, rule IDs, options, and invalid types are errors,
+even when the affected rule is off. `evenflow rules` also lists defaults,
+descriptions, and available options.
 
 `check` accepts Rust files or directories and defaults to the working directory.
 It recursively selects `.rs` files, applies exclusions, deduplicates overlapping
@@ -56,22 +52,17 @@ non-Rust inputs, and a selection with no files after exclusions, are errors.
 
 ## Local suppressions
 
-Use a standalone ordinary comment with one rule ID and a non-empty reason:
+Use a standalone ordinary comment with one rule ID and a non-empty reason.
+In this template, replace `RULE_ID` with an ID listed by `evenflow rules`:
 
-```rust
-// evenflow: allow(FC001): Keep this transaction's straightforward steps together.
-if ready {
-    prepare();
-    write();
-    commit();
-}
+```text
+// evenflow: allow(RULE_ID): Explain why this exception is needed.
 ```
 
 A directive can precede the body-owning construct or its first executable
 statement. It suppresses findings for that exact body, not descendants or
-siblings. Adjacent directives may address different rules. Directives do not
-count as flow explanations; mentioning `evenflow:` inside other prose does not
-activate one.
+siblings. Adjacent directives may address different rules. Mentioning `evenflow:`
+inside other prose does not activate one.
 
 Malformed, trailing, misplaced, unknown-ID, and unused directives are analysis
 errors. Directives for known disabled rules are inactive rather than unused;
