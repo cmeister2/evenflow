@@ -15,7 +15,8 @@
     "release": "semantic-release",
     "release:dry-run": "node .github/release/preview.mjs",
     "release:plan": "node .github/release/plan.mjs",
-    "test:release": "node --test .github/release/*.test.mjs"
+    "test:release": "node --test .github/release/*.test.mjs",
+    "test:action": "node --test .github/action/*.test.mjs"
   },
   "devDependencies": {
     "@semantic-release/commit-analyzer": "13.0.1",

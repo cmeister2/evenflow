@@ -37,7 +37,18 @@ For changes to JavaScript helpers, use Node.js 24.15.0 or newer and npm:
 ```sh
 npm ci --ignore-scripts
 npm run test:release
+npm run test:action
 ```
+
+The root [action.yml](action.yml) exposes the GitHub Action implemented in
+[.github/action/main.mjs](.github/action/main.mjs). It uses the Node.js 24 action
+runtime and built-in modules, so there are no runtime npm dependencies or bundled
+JavaScript artifacts to regenerate. The action downloads release binaries and
+verifies `SHA256SUMS` before running the linter in the caller's checkout.
+
+Run `npm run test:action` when changing action inputs, release installation, or
+CLI invocation. Keep the action's input defaults and supported platforms in sync
+with the [usage documentation](README.md#github-action).
 
 ## Add a bundled rule
 

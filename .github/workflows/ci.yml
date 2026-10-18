@@ -44,9 +44,55 @@ jobs:
       - run: cargo test --locked
       - run: cargo run --locked -- check . --strict
 
+  action:
+    name: GitHub Action (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-15, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+      - run: npm run test:action
+      - name: Prepare a consumer project
+        shell: bash
+        run: |
+          mkdir -p .action-smoke/src
+          printf 'fn clean() {}\n' > .action-smoke/src/check.rs
+      - name: Check a consumer project with the action
+        uses: ./
+        with:
+          version: '0.1.1'
+          working-directory: .action-smoke
+          paths: src/
+          strict: 'true'
+      - name: Add a strict lint violation
+        shell: bash
+        run: |
+          printf 'fn lint() { if ready() { prepare(); write(); commit(); } }\n' > .action-smoke/src/check.rs
+      - name: Verify strict lint failures reach the workflow
+        id: strict
+        continue-on-error: true
+        uses: ./
+        with:
+          version: '0.1.1'
+          working-directory: .action-smoke
+          paths: src/
+          strict: 'true'
+      - name: Require the lint action to fail
+        shell: bash
+        run: test "${{ steps.strict.outcome }}" = failure
+      - name: Remove the consumer project
+        if: always()
+        shell: bash
+        run: rm -rf .action-smoke
+
   release-plan:
     name: Plan publication
-    needs: [checks, msrv]
+    needs: [checks, msrv, action]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-22.04
     # semantic-release verifies push permission even during its dry run.
@@ -78,10 +124,11 @@ jobs:
 
   prepare:
     name: Prepare build inputs
-    needs: [checks, msrv, release-plan]
+    needs: [checks, msrv, action, release-plan]
     if: >-
       always() && !cancelled() &&
       needs.checks.result == 'success' && needs.msrv.result == 'success' &&
+      needs.action.result == 'success' &&
       (needs.release-plan.result == 'success' || needs.release-plan.result == 'skipped')
     runs-on: ubuntu-22.04
     outputs:
@@ -253,13 +300,14 @@ jobs:
   success:
     name: Success
     if: always()
-    needs: [checks, msrv, release-plan, prepare, binaries, source]
+    needs: [checks, msrv, action, release-plan, prepare, binaries, source]
     runs-on: ubuntu-22.04
     steps:
       - name: Require all applicable checks to pass
         env:
           CHECKS_RESULT: ${{ needs.checks.result }}
           MSRV_RESULT: ${{ needs.msrv.result }}
+          ACTION_RESULT: ${{ needs.action.result }}
           PLAN_RESULT: ${{ needs.release-plan.result }}
           PREPARE_RESULT: ${{ needs.prepare.result }}
           BINARIES_RESULT: ${{ needs.binaries.result }}
@@ -268,6 +316,7 @@ jobs:
         run: |
           test "$CHECKS_RESULT" = success
           test "$MSRV_RESULT" = success
+          test "$ACTION_RESULT" = success
           test "$PREPARE_RESULT" = success
           test "$BINARIES_RESULT" = success
           test "$SOURCE_RESULT" = success
