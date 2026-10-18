@@ -10,7 +10,7 @@ categories = ["command-line-utilities", "development-tools"]
 publish = ["crates-io"]
 license = "MIT OR Apache-2.0"
 readme = "README.md"
-include = ["/src/**", "/tests/**", "/scripts/**", "/Cargo.toml", "/Cargo.lock", "/README.md", "/LICENSE-*", "/evenflow.toml"]
+include = ["/src/**", "/tests/**", "/scripts/**", "/Cargo.toml", "/Cargo.lock", "/README.md", "/DEVELOPMENT.md", "/docs/**", "/LICENSE-*", "/evenflow.toml"]
 
 [dependencies]
 clap = { version = "4.6", features = ["derive"] }
