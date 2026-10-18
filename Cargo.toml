@@ -23,7 +23,7 @@ tree-sitter-rust = "=0.24.2"
 walkdir = "2.5"
 
 [dev-dependencies]
-tempfile = "3.27"
+tempfile = "=3.27.0"
 
 [lints.rust]
 missing_docs = "deny"
