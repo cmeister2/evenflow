@@ -295,6 +295,11 @@ publication. CI calculates the release version, stamps it into `Cargo.toml` and
 The versioned archives, source package, checksums, and generated release notes are
 then published together on GitHub Releases.
 
+Pull requests run a semantic-release dry run, show the proposed version and notes
+in the workflow summary, and use that version for the native-platform and
+source-installation checks. If no release is proposed, builds use the checked-in
+development version. Publishing runs only on `main`.
+
 Use Conventional Commits for changes merged to `main`:
 
 | Commit | Release |
@@ -306,11 +311,10 @@ Use Conventional Commits for changes merged to `main`:
 
 The checked-in Cargo version remains the development version, currently
 `0.1.0`; release builds receive the calculated version without a version-bump
-commit. With no existing release tags, semantic-release's first release will be
-`1.0.0`. The release-automation setup commit does not itself request a release;
-the next qualifying change starts publication.
+commit. Semantic-release calculates release versions from the latest Git tag and
+the Conventional Commits after it.
 
-Node.js **24.10.0 or newer** and npm are needed only when working on release
+Node.js **24.15.0 or newer** and npm are needed only when working on release
 automation. Install its locked dependencies and run its checks with:
 
 ```sh
@@ -321,12 +325,13 @@ npm run test:release
 Preview the next version and release notes with:
 
 ```sh
-npm run release -- --dry-run
+npm run release:dry-run
 ```
 
-The preview requires GitHub credentials and repository push rights because
-semantic-release verifies authorization even in dry-run mode. It skips release
-preparation, packaging, and publication.
+The preview uses a temporary local Git repository and needs no publishing
+credentials. It works on feature branches and pull requests, preserves the source
+checkout and remote, and skips publication. Use a full-history clone with tags so
+version calculation includes previous releases.
 
 ## License
 
