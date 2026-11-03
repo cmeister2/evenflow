@@ -109,10 +109,24 @@ CPython stable ABI starting at Python 3.10.
 
 ## Python release publishing
 
-[workflow.yml](.github/workflows/workflow.yml) builds and tests Python wheels for
-Linux x64, macOS ARM64, and Windows x64 on Python 3.10 and 3.15, plus installs and
-tests the source distribution on Rust 1.90. Unsupported platforms can build from
-the source distribution with Rust and a C compiler.
+[workflow.yml](.github/workflows/workflow.yml) builds CPython 3.10+ stable-ABI
+wheels for these platforms:
+
+| Platform | Architectures |
+| --- | --- |
+| Linux glibc 2.28+ (manylinux) | x86_64, i686, aarch64, ARMv7, s390x, ppc64le |
+| Linux musl 1.2+ (musllinux) | x86_64, i686, aarch64, ARMv7 |
+| macOS | ARM64, Intel x86_64 |
+| Windows | x64, x86 |
+
+Native Linux x64, macOS, and Windows jobs install and test their wheels on Python
+3.10 and 3.15. Additional Linux wheels use Maturin's target-specific Docker build
+containers; the x86_64 musllinux wheel is also installed and tested on Alpine
+Python 3.10. Other cross-built Linux wheels are checked during compilation and
+Maturin's portability audit, but are not runtime-tested on their target CPUs.
+The success gate requires every wheel build. The source distribution is installed
+and tested using Rust 1.90. Unsupported platforms can build from the source
+distribution with Rust and a C compiler.
 
 The existing semantic-release plan stamps Cargo.toml and Cargo.lock before all
 builds. Maturin derives the Python version from Cargo.toml. The combined success
