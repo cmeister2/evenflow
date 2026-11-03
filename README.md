@@ -5,8 +5,21 @@ Tree-sitter to check source structure and comments without building your project
 
 ## Install and run
 
+Install the Python package (CPython 3.10 or newer):
+
+```sh
+python -m pip install evenflow
+```
+
+Or install the Rust executable (Rust 1.90 or newer):
+
 ```sh
 cargo install --locked evenflow
+```
+
+Both installations provide the same command:
+
+```sh
 evenflow check
 evenflow check src/ worker/src/
 evenflow check . --strict
@@ -16,6 +29,30 @@ evenflow rules
 
 Prebuilt binaries are available from
 [GitHub Releases](https://github.com/cmeister2/evenflow/releases).
+
+## Library usage
+
+Python calls the Rust scanner directly; no subprocess or Rust toolchain is
+needed when installing a wheel:
+
+```python
+import evenflow
+
+report = evenflow.check(["src/"], working_directory="/path/to/project", strict=True)
+for diagnostic in report["diagnostics"]:
+    print(diagnostic["rule"], diagnostic["message"])
+```
+
+`check()` returns the [JSON report schema](docs/DIAGNOSTICS.md) as a dictionary,
+including lint and operational errors. It does not print or change the working
+directory. Omit paths to scan the working directory. `python -m evenflow` runs
+the CLI, and `evenflow.main(args)` returns its exit status.
+
+Rust callers can depend on the `evenflow` crate and use
+`evenflow::runner::run(working_directory, paths, strict)` to obtain a
+`evenflow::model::Report`; `report.exit_code()` applies CLI exit semantics.
+The Rust API is not yet stable. Python bindings are optional and are enabled by
+Maturin; ordinary Cargo builds do not require Python.
 
 ## GitHub Action
 

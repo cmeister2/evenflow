@@ -10,11 +10,15 @@ categories = ["command-line-utilities", "development-tools"]
 publish = ["crates-io"]
 license = "MIT OR Apache-2.0"
 readme = "README.md"
-include = ["/src/**", "/tests/**", "/scripts/**", "/Cargo.toml", "/Cargo.lock", "/README.md", "/DEVELOPMENT.md", "/docs/**", "/LICENSE-*", "/evenflow.toml"]
+include = ["/src/**", "/tests/**", "/scripts/**", "/Cargo.toml", "/Cargo.lock", "/README.md", "/DEVELOPMENT.md", "/docs/**", "/LICENSE-*", "/evenflow.toml", "/pyproject.toml", "/python/evenflow/*.py", "/python/evenflow/*.pyi", "/python/evenflow/py.typed"]
+
+[lib]
+crate-type = ["rlib", "cdylib"]
 
 [dependencies]
 clap = { version = "4.6", features = ["derive"] }
 globset = "0.4.18"
+pyo3 = { version = "0.30.1", features = ["abi3-py310"], optional = true }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "1.0.0"
@@ -37,3 +41,6 @@ missing_panics_doc = "deny"
 [profile.release]
 lto = "thin"
 strip = true
+
+[features]
+pyo3 = ["dep:pyo3"]
