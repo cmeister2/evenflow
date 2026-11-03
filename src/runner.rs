@@ -21,7 +21,20 @@ struct Selection {
 }
 
 /// Analyze selected files using one configuration and the bundled rule registry.
-pub(crate) fn run(working_directory: &Path, inputs: &[PathBuf], strict: bool) -> Report {
+///
+/// `working_directory` should be absolute. Relative inputs are resolved against
+/// it; an empty input list scans that directory. Configuration discovery defines
+/// the scan root and exclusions, just as for the CLI. This function neither
+/// prints diagnostics nor changes the process working directory. Operational
+/// failures are included in the returned [`Report`].
+///
+/// ```no_run
+/// let directory = std::env::current_dir()?;
+/// let report = evenflow::runner::run(&directory, &["src".into()], true);
+/// println!("{}", report.exit_code());
+/// # Ok::<(), std::io::Error>(())
+/// ```
+pub fn run(working_directory: &Path, inputs: &[PathBuf], strict: bool) -> Report {
     let registry = match Registry::bundled() {
         Ok(registry) => registry,
         Err(message) => {

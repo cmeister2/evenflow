@@ -8,3 +8,10 @@
 /.aws/
 *.tar.gz
 *.zip
+
+/.venv/
+__pycache__/
+*.py[cod]
+*.so
+*.pyd
+/.pytest_cache/

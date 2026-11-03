@@ -24,6 +24,7 @@ jobs:
           components: clippy, rustfmt
       - run: cargo fmt --all -- --check
       - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo clippy --locked --all-targets --features pyo3 -- -D warnings
       - run: cargo test --locked
       - run: cargo run --locked -- check . --strict
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
@@ -41,6 +42,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.90.0
         with:
           components: rustfmt
+      - run: cargo check --locked --features pyo3
       - run: cargo test --locked
       - run: cargo run --locked -- check . --strict
 
@@ -297,10 +299,81 @@ jobs:
           path: target/package/*.crate
           if-no-files-found: error
 
+  wheels:
+    name: Python wheel (${{ matrix.os }}, ${{ matrix.python }})
+    needs: prepare
+    if: always() && !cancelled() && needs.prepare.result == 'success'
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-15, windows-2022]
+        python: ['3.10', '3.15']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: build-plan
+          path: release-prepared/
+      - name: Apply shared release version
+        shell: bash
+        run: cp release-prepared/Cargo.toml release-prepared/Cargo.lock .
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Build portable wheel
+        uses: PyO3/maturin-action@423a6347767a8b16e65c2a7a7042e4a921528da8 # v1
+        with:
+          args: --release --locked --out wheels --interpreter ${{ runner.os == 'Linux' && format('python{0}', matrix.python) || 'python' }}
+          manylinux: "2_28"
+      - name: Install and test wheel
+        shell: bash
+        run: |
+          python -m pip install wheels/*.whl pytest
+          python -m pytest python/tests
+          test "$(python -m evenflow --version)" = "evenflow ${{ needs.prepare.outputs.version }}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: matrix.python == '3.10'
+        with:
+          name: python-wheel-${{ matrix.os }}
+          path: wheels/*.whl
+          if-no-files-found: error
+
+  sdist:
+    name: Python source distribution
+    needs: prepare
+    if: always() && !cancelled() && needs.prepare.result == 'success'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: build-plan
+          path: release-prepared/
+      - run: cp release-prepared/Cargo.toml release-prepared/Cargo.lock .
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.10'
+      - uses: dtolnay/rust-toolchain@1.90.0
+      - name: Build source distribution
+        uses: PyO3/maturin-action@423a6347767a8b16e65c2a7a7042e4a921528da8 # v1
+        with:
+          command: sdist
+          args: --out wheels
+      - name: Install and test source distribution
+        run: |
+          python -m pip install wheels/*.tar.gz pytest
+          python -m pytest python/tests
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: python-sdist
+          path: wheels/*.tar.gz
+          if-no-files-found: error
+
   success:
     name: Success
     if: always()
-    needs: [checks, msrv, action, release-plan, prepare, binaries, source]
+    needs: [checks, msrv, action, release-plan, prepare, binaries, source, wheels, sdist]
     runs-on: ubuntu-26.04
     steps:
       - name: Require all applicable checks to pass
@@ -311,6 +384,8 @@ jobs:
           PLAN_RESULT: ${{ needs.release-plan.result }}
           PREPARE_RESULT: ${{ needs.prepare.result }}
           BINARIES_RESULT: ${{ needs.binaries.result }}
+          WHEELS_RESULT: ${{ needs.wheels.result }}
+          SDIST_RESULT: ${{ needs.sdist.result }}
           SOURCE_RESULT: ${{ needs.source.result }}
           EXPECT_RELEASE_PLAN: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
         run: |
@@ -320,6 +395,8 @@ jobs:
           test "$PREPARE_RESULT" = success
           test "$BINARIES_RESULT" = success
           test "$SOURCE_RESULT" = success
+          test "$WHEELS_RESULT" = success
+          test "$SDIST_RESULT" = success
           if [ "$EXPECT_RELEASE_PLAN" = true ]; then
             test "$PLAN_RESULT" = success
           else
@@ -357,3 +434,22 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  pypi:
+    name: Publish Python library to PyPI
+    needs: [release, release-plan]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.release-plan.outputs.releasing == 'true'
+    runs-on: ubuntu-22.04
+    environment:
+      name: pypi
+      url: https://pypi.org/p/evenflow
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: python-*
+          path: dist/
+          merge-multiple: true
+      - name: Publish tested distributions with trusted publishing
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # release/v1

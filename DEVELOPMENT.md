@@ -84,3 +84,46 @@ bash scripts/release-smoke.sh target/release/evenflow
 The smoke script copies the executable and fixtures to a temporary directory,
 clears the executable's environment and `PATH`, and checks clean, lint-failing,
 and syntax-failing JSON scans.
+
+## Python development and packaging
+
+Use CPython 3.10 or newer with the same Rust and C build prerequisites above:
+
+```sh
+python -m venv .venv
+. .venv/bin/activate
+python -m pip install 'maturin>=1.12,<2' pytest
+maturin develop --locked
+python -m pytest python/tests
+python -m evenflow check . --strict
+cargo clippy --locked --all-targets --features pyo3 -- -D warnings
+maturin build --release --locked --out dist
+maturin sdist --out dist
+```
+
+On Windows, activate with `.venv\Scripts\Activate.ps1`. The mixed Python/Rust
+layout follows [Maturin's project layout](https://www.maturin.rs/project_layout).
+`python/evenflow` supplies the public API and console entry point;
+`src/python.rs` binds the shared Rust runner and CLI through PyO3. Wheels use the
+CPython stable ABI starting at Python 3.10.
+
+## Python release publishing
+
+[workflow.yml](.github/workflows/workflow.yml) builds and tests Python wheels for
+Linux x64, macOS ARM64, and Windows x64 on Python 3.10 and 3.15, plus installs and
+tests the source distribution on Rust 1.90. Unsupported platforms can build from
+the source distribution with Rust and a C compiler.
+
+The existing semantic-release plan stamps Cargo.toml and Cargo.lock before all
+builds. Maturin derives the Python version from Cargo.toml. The combined success
+gate requires Rust, Python, and GitHub Action checks. After the crates.io and
+GitHub release succeeds, the PyPI job uploads the tested wheels and source
+distribution using [trusted publishing](https://docs.pypi.org/trusted-publishers/using-a-publisher/).
+No PyPI token is needed. Its publisher identity is repository
+`cmeister2/evenflow`, workflow `workflow.yml`, environment `pypi`; these must
+match the pending publisher on PyPI. The existing crates.io release still uses
+`CARGO_REGISTRY_TOKEN`.
+
+Publication across registries is not atomic. If PyPI publishing fails after the
+Rust release, rerun the failed PyPI job in that workflow run to reuse its tested
+artifacts. Do not start a fresh release to repair a failed upload.

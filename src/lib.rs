@@ -12,3 +12,6 @@ pub mod registry;
 mod resolution;
 pub mod runner;
 pub mod source;
+
+#[cfg(feature = "pyo3")]
+mod python;
