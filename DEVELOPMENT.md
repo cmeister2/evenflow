@@ -119,8 +119,12 @@ wheels for these platforms:
 | macOS | ARM64, Intel x86_64 |
 | Windows | x64, x86 |
 
-Native Linux x64, macOS, and Windows jobs install and test their wheels on Python
-3.10 and 3.15. Additional Linux wheels use Maturin's target-specific Docker build
+Native Linux x64, macOS ARM64, and Windows jobs install and test their wheels on
+Python 3.10 and 3.15. Intel macOS uses Python 3.10: its Python 3.15 job is excluded
+because setup-python repeatedly stalls before the build starts. The Intel abi3
+wheel still supports CPython 3.10+, but Intel Python 3.15 runtime testing is
+currently disabled. Native wheel jobs limit Python setup to ten minutes.
+Additional Linux wheels use Maturin's target-specific Docker build
 containers; the x86_64 musllinux wheel is also installed and tested on Alpine
 Python 3.10. Other cross-built Linux wheels are checked during compilation and
 Maturin's portability audit, but are not runtime-tested on their target CPUs.
