@@ -51,7 +51,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-15, windows-2022]
+        os: [ubuntu-22.04, macos-26, windows-2022]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -173,7 +173,7 @@ jobs:
           - os: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             binary: evenflow
-          - os: macos-15
+          - os: macos-26
             target: aarch64-apple-darwin
             binary: evenflow
           - os: windows-2022
@@ -300,15 +300,30 @@ jobs:
           if-no-files-found: error
 
   wheels:
-    name: Python wheel (${{ matrix.os }}, ${{ matrix.python }})
+    name: Python wheel (${{ matrix.platform.target }}, ${{ matrix.python }})
     needs: prepare
     if: always() && !cancelled() && needs.prepare.result == 'success'
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, macos-15, windows-2022]
+        platform:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            python-architecture: x64
+          - os: macos-26
+            target: aarch64-apple-darwin
+            python-architecture: arm64
+          - os: macos-26-intel
+            target: x86_64-apple-darwin
+            python-architecture: x64
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+            python-architecture: x64
+          - os: windows-2022
+            target: i686-pc-windows-msvc
+            python-architecture: x86
         python: ['3.10', '3.15']
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.platform.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
@@ -321,9 +336,11 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
           python-version: ${{ matrix.python }}
+          architecture: ${{ matrix.platform.python-architecture }}
       - name: Build portable wheel
         uses: PyO3/maturin-action@423a6347767a8b16e65c2a7a7042e4a921528da8 # v1
         with:
+          target: ${{ matrix.platform.target }}
           args: --release --locked --out wheels --interpreter ${{ runner.os == 'Linux' && format('python{0}', matrix.python) || 'python' }}
           manylinux: "2_28"
       - name: Install and test wheel
@@ -335,7 +352,67 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: matrix.python == '3.10'
         with:
-          name: python-wheel-${{ matrix.os }}
+          name: python-wheel-${{ matrix.platform.target }}
+          path: wheels/*.whl
+          if-no-files-found: error
+
+  linux-wheels:
+    name: Python wheel (${{ matrix.target }}, ${{ matrix.manylinux }})
+    needs: prepare
+    if: always() && !cancelled() && needs.prepare.result == 'success'
+    runs-on: ubuntu-22.04
+    env:
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x86_64 glibc is built and tested in the native wheels job.
+          - target: i686-unknown-linux-gnu
+            manylinux: "2_28"
+          - target: aarch64-unknown-linux-gnu
+            manylinux: "2_28"
+          - target: armv7-unknown-linux-gnueabihf
+            manylinux: "2_28"
+          - target: s390x-unknown-linux-gnu
+            manylinux: "2_28"
+          - target: powerpc64le-unknown-linux-gnu
+            manylinux: "2_28"
+          - target: x86_64-unknown-linux-musl
+            manylinux: musllinux_1_2
+          - target: i686-unknown-linux-musl
+            manylinux: musllinux_1_2
+          - target: aarch64-unknown-linux-musl
+            manylinux: musllinux_1_2
+          - target: armv7-unknown-linux-musleabihf
+            manylinux: musllinux_1_2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: build-plan
+          path: release-prepared/
+      - name: Apply shared release version
+        run: cp release-prepared/Cargo.toml release-prepared/Cargo.lock .
+      - name: Build portable wheel in the target's Linux container
+        uses: PyO3/maturin-action@423a6347767a8b16e65c2a7a7042e4a921528da8 # v1
+        with:
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          # The stable ABI permits cross-compilation without a target interpreter.
+          args: --release --locked --out wheels
+      - name: Install and test x86_64 musllinux wheel on Alpine
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: |
+          docker run --rm --volume "$PWD:/io:ro" --workdir /io \
+            --env RELEASE_VERSION python:3.10-alpine sh -ec '
+              python -m pip install wheels/*.whl pytest
+              python -m pytest -p no:cacheprovider python/tests
+              test "$(python -m evenflow --version)" = "evenflow $RELEASE_VERSION"
+            '
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: python-wheel-${{ matrix.target }}-${{ matrix.manylinux }}
           path: wheels/*.whl
           if-no-files-found: error
 
@@ -373,7 +450,7 @@ jobs:
   success:
     name: Success
     if: always()
-    needs: [checks, msrv, action, release-plan, prepare, binaries, source, wheels, sdist]
+    needs: [checks, msrv, action, release-plan, prepare, binaries, source, wheels, linux-wheels, sdist]
     runs-on: ubuntu-26.04
     steps:
       - name: Require all applicable checks to pass
@@ -385,6 +462,7 @@ jobs:
           PREPARE_RESULT: ${{ needs.prepare.result }}
           BINARIES_RESULT: ${{ needs.binaries.result }}
           WHEELS_RESULT: ${{ needs.wheels.result }}
+          LINUX_WHEELS_RESULT: ${{ needs.linux-wheels.result }}
           SDIST_RESULT: ${{ needs.sdist.result }}
           SOURCE_RESULT: ${{ needs.source.result }}
           EXPECT_RELEASE_PLAN: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' }}
@@ -396,6 +474,7 @@ jobs:
           test "$BINARIES_RESULT" = success
           test "$SOURCE_RESULT" = success
           test "$WHEELS_RESULT" = success
+          test "$LINUX_WHEELS_RESULT" = success
           test "$SDIST_RESULT" = success
           if [ "$EXPECT_RELEASE_PLAN" = true ]; then
             test "$PLAN_RESULT" = success
