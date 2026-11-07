@@ -348,7 +348,7 @@ jobs:
           python-version: ${{ matrix.python }}
           architecture: ${{ matrix.platform.python-architecture }}
       - name: Build portable wheel
-        uses: PyO3/maturin-action@423a6347767a8b16e65c2a7a7042e4a921528da8 # v1
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
         with:
           target: ${{ matrix.platform.target }}
           args: --release --locked --out wheels --interpreter ${{ runner.os == 'Linux' && format('python{0}', matrix.python) || 'python' }}
@@ -405,7 +405,7 @@ jobs:
       - name: Apply shared release version
         run: cp release-prepared/Cargo.toml release-prepared/Cargo.lock .
       - name: Build portable wheel in the target's Linux container
-        uses: PyO3/maturin-action@423a6347767a8b16e65c2a7a7042e4a921528da8 # v1
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
         with:
           target: ${{ matrix.target }}
           manylinux: ${{ matrix.manylinux }}
@@ -440,10 +440,10 @@ jobs:
       - run: cp release-prepared/Cargo.toml release-prepared/Cargo.lock .
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
         with:
-          python-version: '3.10'
+          python-version: '3.15'
       - uses: dtolnay/rust-toolchain@1.90.0
       - name: Build source distribution
-        uses: PyO3/maturin-action@423a6347767a8b16e65c2a7a7042e4a921528da8 # v1
+        uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1
         with:
           command: sdist
           args: --out wheels
