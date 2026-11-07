@@ -370,7 +370,7 @@ jobs:
     name: Python wheel (${{ matrix.target }}, ${{ matrix.manylinux }})
     needs: prepare
     if: always() && !cancelled() && needs.prepare.result == 'success'
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-26.04
     env:
       RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
     strategy:
@@ -430,7 +430,7 @@ jobs:
     name: Python source distribution
     needs: prepare
     if: always() && !cancelled() && needs.prepare.result == 'success'
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
@@ -528,7 +528,7 @@ jobs:
     name: Publish Python library to PyPI
     needs: [release, release-plan]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.release-plan.outputs.releasing == 'true'
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-26.04
     environment:
       name: pypi
       url: https://pypi.org/p/evenflow
