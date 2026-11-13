@@ -370,7 +370,7 @@ jobs:
     name: Python wheel (${{ matrix.target }}, ${{ matrix.manylinux }})
     needs: prepare
     if: always() && !cancelled() && needs.prepare.result == 'success'
-    runs-on: ubuntu-26.04
+    runs-on: ${{ matrix.runner || 'ubuntu-26.04' }}
     env:
       RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
     strategy:
@@ -380,6 +380,8 @@ jobs:
           # Linux x86_64 glibc is built and tested in the native wheels job.
           - target: i686-unknown-linux-gnu
             manylinux: "2_28"
+            # The i686 AlmaLinux container cannot resolve its package host on Ubuntu 26.04.
+            runner: ubuntu-22.04
           - target: aarch64-unknown-linux-gnu
             manylinux: "2_28"
           - target: armv7-unknown-linux-gnueabihf
